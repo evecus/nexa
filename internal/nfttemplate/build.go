@@ -5,6 +5,7 @@ package nfttemplate
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"os/user"
 	"strconv"
 	"strings"
@@ -192,12 +193,56 @@ func buildRouterViews(cfg *config.Config) []AccessControlView {
 		}
 		out = append(out, AccessControlView{
 			Enabled: ac.Enabled,
-			User:    ac.User,
-			Group:   ac.Group,
-			Cgroup:  ac.Cgroup,
+			User:    filterExistingUsers(ac.User),
+			Group:   filterExistingGroups(ac.Group),
+			Cgroup:  filterExistingCgroups(ac.Cgroup),
 			Dns:     ac.Dns,
 			Proxy:   ac.Proxy,
 		})
+	}
+	return out
+}
+
+// filterExistingCgroups 过滤掉 /sys/fs/cgroup/ 下不存在的 cgroup 路径，
+// 避免 nft 加载时因 cgroupv2 path 不存在而失败。
+func filterExistingCgroups(paths []string) []string {
+	var out []string
+	for _, p := range paths {
+		if p == "" {
+			continue
+		}
+		full := "/sys/fs/cgroup/" + strings.TrimPrefix(p, "/")
+		if st, err := os.Stat(full); err == nil && st.IsDir() {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// filterExistingUsers 过滤掉系统中不存在的用户名。
+func filterExistingUsers(users []string) []string {
+	var out []string
+	for _, u := range users {
+		if u == "" {
+			continue
+		}
+		if _, err := user.Lookup(u); err == nil {
+			out = append(out, u)
+		}
+	}
+	return out
+}
+
+// filterExistingGroups 过滤掉系统中不存在的用户组名。
+func filterExistingGroups(groups []string) []string {
+	var out []string
+	for _, g := range groups {
+		if g == "" {
+			continue
+		}
+		if _, err := user.LookupGroup(g); err == nil {
+			out = append(out, g)
+		}
 	}
 	return out
 }
