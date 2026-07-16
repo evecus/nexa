@@ -589,6 +589,10 @@ route('#/log', async (c) => {
   const appCard = UI.el('div', { class: 'card' });
   appCard.appendChild(UI.el('div', { class: 'card-title' }, '插件日志',
     UI.el('div', { class: 'row-gap' },
+      UI.el('button', { class: 'btn btn-outline btn-sm', onclick: () => {
+        const b = document.getElementById('app-log');
+        navigator.clipboard.writeText(b.textContent).then(() => UI.toast('已复制', 'ok')).catch(() => UI.toast('复制失败', 'err'));
+      } }, '复制'),
       UI.el('button', { class: 'btn btn-danger btn-sm', onclick: async () => { await API.post('/api/logs/app/clear'); loadApp(); } }, '清空'),
       UI.el('button', { class: 'btn btn-outline btn-sm', onclick: () => { const b = document.getElementById('app-log'); b.scrollTop = b.scrollHeight; } }, '滚到底部')
     )));
@@ -600,6 +604,10 @@ route('#/log', async (c) => {
   const coreCard = UI.el('div', { class: 'card' });
   coreCard.appendChild(UI.el('div', { class: 'card-title' }, '核心日志',
     UI.el('div', { class: 'row-gap' },
+      UI.el('button', { class: 'btn btn-outline btn-sm', onclick: () => {
+        const b = document.getElementById('core-log');
+        navigator.clipboard.writeText(b.textContent).then(() => UI.toast('已复制', 'ok')).catch(() => UI.toast('复制失败', 'err'));
+      } }, '复制'),
       UI.el('button', { class: 'btn btn-danger btn-sm', onclick: async () => { await API.post('/api/logs/core/clear'); } }, '清空'),
       UI.el('button', { class: 'btn btn-outline btn-sm', onclick: () => { const b = document.getElementById('core-log'); b.scrollTop = b.scrollHeight; } }, '滚到底部')
     )));
