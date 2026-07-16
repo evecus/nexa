@@ -63,6 +63,7 @@ func main() {
 	// 信号处理：优雅关闭，清理网络规则并杀掉核心进程
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	cleanupDone := make(chan struct{})
 	go func() {
 		<-sigCh
 		log.Println("收到退出信号，正在清理并关闭...")
@@ -74,10 +75,12 @@ func main() {
 		a.Sched.Stop()
 		_ = a.Store.Close()
 		log.Println("已清理完成，退出。")
-		os.Exit(0)
+		close(cleanupDone)
 	}()
 
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("HTTP 服务失败: %v", err)
 	}
+	// 等待信号处理完成清理后再退出，避免 main 提前退出导致 a.Stop() 未执行
+	<-cleanupDone
 }
