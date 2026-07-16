@@ -1,6 +1,12 @@
 // Package config 定义 nexa 的全部配置模型，字段 1:1 对齐原 UCI proxy 配置。
 package config
 
+import (
+	"net"
+	"os"
+	"strings"
+)
+
 // Config 顶层配置容器，对应原 /etc/config/proxy 的所有 section。
 type Config struct {
 	Config                ConfigSection         `json:"config"`
@@ -130,7 +136,7 @@ func Default() *Config {
 			UdpMode:                "tun",
 			RouterProxy:            true,
 			LanProxy:               true,
-			LanInboundInterface:    []string{"lan"},
+			LanInboundInterface:    defaultLanInboundInterface(),
 			DnsPort:                "1053",
 			RedirPort:              "7892",
 			TproxyPort:             "7893",
@@ -157,23 +163,7 @@ func Default() *Config {
 			TunTimeout:              30,
 			TunInterval:             1,
 		},
-		RouterAccessControls: []RouterAccessControl{
-			{
-				ID: "router-default-bypass", Enabled: true,
-				User: []string{"dnsmasq", "ftp", "logd", "nobody", "ntp", "ubus"},
-				Group: []string{"dnsmasq", "ftp", "logd", "nogroup", "ntp", "ubus"},
-				Cgroup: []string{
-					"services/adguardhome", "services/aria2", "services/dnsmasq",
-					"services/netbird", "services/qbittorrent", "services/sysntpd",
-					"services/tailscale", "services/zerotier",
-				},
-				Dns: false, Proxy: false,
-			},
-			{
-				ID: "router-default-proxy", Enabled: true,
-				Dns: true, Proxy: true,
-			},
-		},
+		RouterAccessControls: defaultRouterAccessControls(),
 		LanAccessControls: []LanAccessControl{
 			{
 				ID: "lan-default", Enabled: true,
@@ -200,4 +190,85 @@ func Default() *Config {
 			ScheduledClearSizeLimitUnit: "MB",
 		},
 	}
+}
+
+// defaultRouterAccessControls 根据系统类型返回本机代理默认规则。
+func defaultRouterAccessControls() []RouterAccessControl {
+	if isOpenWrt() {
+		return []RouterAccessControl{
+			{
+				ID: "router-default-bypass", Enabled: true,
+				User:  []string{"dnsmasq", "ftp", "logd", "nobody", "ntp", "ubus"},
+				Group: []string{"dnsmasq", "ftp", "logd", "nogroup", "ntp", "ubus"},
+				Cgroup: []string{
+					"services/adguardhome", "services/aria2", "services/dnsmasq",
+					"services/netbird", "services/qbittorrent", "services/sysntpd",
+					"services/tailscale", "services/zerotier",
+				},
+				Dns: false, Proxy: false,
+			},
+			{
+				ID: "router-default-proxy", Enabled: true,
+				Dns: true, Proxy: true,
+			},
+		}
+	}
+	// 普通 Linux (systemd)
+	return []RouterAccessControl{
+		{
+			ID: "router-default-bypass", Enabled: true,
+			User:  []string{"nobody", "systemd-network", "systemd-resolve"},
+			Group: []string{"nogroup", "systemd-network", "systemd-resolve"},
+			Cgroup: []string{
+				"system.slice/systemd-resolved.service",
+				"system.slice/systemd-networkd.service",
+				"system.slice/NetworkManager.service",
+				"system.slice/sshd.service",
+			},
+			Dns: false, Proxy: false,
+		},
+		{
+			ID: "router-default-proxy", Enabled: true,
+			Dns: true, Proxy: true,
+		},
+	}
+}
+
+// isOpenWrt 检测当前系统是否为 OpenWrt。
+func isOpenWrt() bool {
+	_, err := os.Stat("/etc/openwrt_release")
+	return err == nil
+}
+
+// defaultLanInboundInterface 根据系统类型返回局域网入站接口默认值。
+// OpenWrt 用 br-lan/lan；普通 Linux 自动探测活动物理网卡。
+func defaultLanInboundInterface() []string {
+	if isOpenWrt() {
+		return []string{"lan"}
+	}
+	// 普通 Linux：探测活动网卡
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return []string{"eth0"}
+	}
+	var result []string
+	for _, iface := range ifaces {
+		// 跳过 lo、虚拟接口、未启用的接口
+		if iface.Flags&net.FlagLoopback != 0 || iface.Flags&net.FlagUp == 0 {
+			continue
+		}
+		name := iface.Name
+		// 跳过已知的虚拟接口
+		if strings.HasPrefix(name, "docker") || strings.HasPrefix(name, "br-") ||
+			strings.HasPrefix(name, "veth") || strings.HasPrefix(name, "virbr") ||
+			strings.HasPrefix(name, "tun") || strings.HasPrefix(name, "wg") ||
+			strings.HasPrefix(name, "lo") {
+			continue
+		}
+		result = append(result, name)
+	}
+	if len(result) == 0 {
+		return []string{"eth0"}
+	}
+	return result
 }
