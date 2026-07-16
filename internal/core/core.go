@@ -3,6 +3,7 @@
 package core
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -125,9 +126,78 @@ func (m *Manager) Start(cfg *config.Config) error {
 	// 写 pidfile
 	_ = os.WriteFile(paths.PidFilePath, []byte(strconv.Itoa(m.pid)), 0644)
 
+	// 关键：把核心进程放入指定 cgroup，否则 nft 规则里的
+	// `socket cgroupv2 level 2 "services/<name>" counter return`（cgroup v2）
+	// 或 `meta cgroup <id> counter return`（cgroup v1）匹配不到，
+	// 会导致核心自身出站流量被自身规则再次劫持，连接数指数级增长，内存暴涨。
+	if err := m.placeIntoCgroup(cfg); err != nil {
+		m.log.App("核心", "警告：cgroup 设置失败："+err.Error()+"，防回环可能失效。")
+	} else {
+		m.log.App("核心", fmt.Sprintf("已将 PID %d 加入 cgroup。", m.pid))
+	}
+
 	// respawn 守护
 	go m.watch(cfg)
 	return nil
+}
+
+// placeIntoCgroup 把核心进程放入配置的 cgroup，对齐原 proxy.init 的 launcher 行为。
+// cgroup v2：/sys/fs/cgroup/services/<name>/cgroup.procs
+// cgroup v1：/sys/fs/cgroup/net_cls/<name>/cgroup.procs（同时写 net_cls.classid）
+func (m *Manager) placeIntoCgroup(cfg *config.Config) error {
+	name := cfg.Routing.CgroupName
+	if name == "" {
+		return nil
+	}
+	pid := strconv.Itoa(m.pid)
+	switch cgroupsVersion() {
+	case 2:
+		cgPath := "/sys/fs/cgroup/services/" + name
+		if err := os.MkdirAll(cgPath, 0755); err != nil {
+			// 目录可能已存在或已被其他子进程占用，尝试直接写父级
+			return writeCgroupProcs("/sys/fs/cgroup/services", pid)
+		}
+		return writeCgroupProcs(cgPath, pid)
+	case 1:
+		cgPath := "/sys/fs/cgroup/net_cls/" + name
+		if err := os.MkdirAll(cgPath, 0755); err != nil {
+			return err
+		}
+		if cfg.Routing.CgroupID != "" {
+			_ = os.WriteFile(cgPath+"/net_cls.classid", []byte(cfg.Routing.CgroupID), 0644)
+		}
+		return writeCgroupProcs(cgPath, pid)
+	}
+	return nil
+}
+
+func writeCgroupProcs(path, pid string) error {
+	return os.WriteFile(filepath.Join(path, "cgroup.procs"), []byte(pid), 0644)
+}
+
+// cgroupsVersion 判断 cgroup 版本。对齐 netmanager 的同名函数。
+func cgroupsVersion() int {
+	f, err := os.Open("/proc/mounts")
+	if err != nil {
+		return 2
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		fields := strings.Fields(sc.Text())
+		if len(fields) >= 3 {
+			// cgroup v2：type 为 cgroup2
+			if fields[2] == "cgroup2" {
+				return 2
+			}
+			// cgroup v1：type 为 cgroup（含 net_cls 控制器）
+			if fields[2] == "cgroup" && strings.Contains(fields[3], "net_cls") {
+				return 1
+			}
+		}
+	}
+	// 默认按 v2 处理（现代 OpenWrt 都是 v2）
+	return 2
 }
 
 // watch 对齐 procd respawn：进程退出后若非主动停止则重启。
