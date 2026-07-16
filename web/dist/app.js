@@ -65,6 +65,25 @@ const UI = {
   },
 };
 
+function copyText(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(() => UI.toast('已复制', 'ok')).catch(() => fallbackCopy(text));
+  } else {
+    fallbackCopy(text);
+  }
+}
+function fallbackCopy(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy') ? UI.toast('已复制', 'ok') : UI.toast('复制失败', 'err'); }
+  catch (e) { UI.toast('复制失败', 'err'); }
+  ta.remove();
+}
+
 // ── 路由 ─────────────────────────────
 const routes = {};
 function route(path, fn) { routes[path] = fn; }
@@ -603,13 +622,13 @@ route('#/log', async (c) => {
   cfgCard.appendChild(saveLogBtn);
   c.appendChild(cfgCard);
 
-  // 插件日志
+  // 面板日志
   const appCard = UI.el('div', { class: 'card' });
-  appCard.appendChild(UI.el('div', { class: 'card-title' }, '插件日志',
+  appCard.appendChild(UI.el('div', { class: 'card-title' }, '面板日志',
     UI.el('div', { class: 'row-gap' },
       UI.el('button', { class: 'btn btn-outline btn-sm', onclick: () => {
         const b = document.getElementById('app-log');
-        navigator.clipboard.writeText(b.textContent).then(() => UI.toast('已复制', 'ok')).catch(() => UI.toast('复制失败', 'err'));
+        copyText(b.textContent);
       } }, '复制'),
       UI.el('button', { class: 'btn btn-danger btn-sm', onclick: async () => { await API.post('/api/logs/app/clear'); loadApp(); } }, '清空'),
       UI.el('button', { class: 'btn btn-outline btn-sm', onclick: () => { const b = document.getElementById('app-log'); b.scrollTop = b.scrollHeight; } }, '滚到底部')
@@ -624,9 +643,9 @@ route('#/log', async (c) => {
     UI.el('div', { class: 'row-gap' },
       UI.el('button', { class: 'btn btn-outline btn-sm', onclick: () => {
         const b = document.getElementById('core-log');
-        navigator.clipboard.writeText(b.textContent).then(() => UI.toast('已复制', 'ok')).catch(() => UI.toast('复制失败', 'err'));
+        copyText(b.textContent);
       } }, '复制'),
-      UI.el('button', { class: 'btn btn-danger btn-sm', onclick: async () => { await API.post('/api/logs/core/clear'); } }, '清空'),
+      UI.el('button', { class: 'btn btn-danger btn-sm', onclick: async () => { await API.post('/api/logs/core/clear'); loadCore(); } }, '清空'),
       UI.el('button', { class: 'btn btn-outline btn-sm', onclick: () => { const b = document.getElementById('core-log'); b.scrollTop = b.scrollHeight; } }, '滚到底部')
     )));
   const coreBox = UI.el('div', { class: 'log-box', id: 'core-log' });
@@ -639,24 +658,20 @@ route('#/log', async (c) => {
     appBox.scrollTop = appBox.scrollHeight;
   }
   await loadApp();
-  // 轮询 app 日志
-  const pollApp = setInterval(loadApp, 3000);
 
-  // SSE 核心日志实时
-  let evtSrc;
-  function startSSE() {
-    if (evtSrc) evtSrc.close();
-    evtSrc = new EventSource('/api/logs/stream');
-    evtSrc.onmessage = (e) => {
-      coreBox.textContent += e.data + '\n';
-      coreBox.scrollTop = coreBox.scrollHeight;
-    };
-    evtSrc.onerror = () => { evtSrc.close(); setTimeout(startSSE, 3000); };
+  async function loadCore() {
+    const log = await API.get('/api/logs/core');
+    coreBox.textContent = typeof log === 'string' ? log : '';
+    coreBox.scrollTop = coreBox.scrollHeight;
   }
-  startSSE();
+  await loadCore();
+
+  // 轮询日志
+  const pollApp = setInterval(loadApp, 3000);
+  const pollCore = setInterval(loadCore, 3000);
 
   // 离开页面时清理
-  window.__logCleanup = () => { clearInterval(pollApp); if (evtSrc) evtSrc.close(); };
+  window.__logCleanup = () => { clearInterval(pollApp); clearInterval(pollCore); };
 });
 
 // ── 页面：设置 ─────────────────────
