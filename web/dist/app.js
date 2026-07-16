@@ -244,7 +244,6 @@ route('#/app', async (c) => {
 
   // 保存按钮
   const saveBar = UI.el('div', { class: 'flex-between' });
-  saveBar.appendChild(UI.el('div', { class: 'muted' }, '保存后配置写入文件，保存并应用会刷新页面'));
   const actions = UI.el('div', { class: 'right-actions' });
   const saveOnlyBtn = UI.el('button', { class: 'btn btn-outline' }, '保存');
   saveOnlyBtn.addEventListener('click', async () => {
@@ -464,7 +463,6 @@ route('#/proxy', async (c) => {
 
   // 保存
   const saveBar = UI.el('div', { class: 'flex-between mt-20' });
-  saveBar.appendChild(UI.el('div', { class: 'muted' }, '保存后配置写入文件，保存并应用会重新加载配置'));
   const actions = UI.el('div', { class: 'right-actions' });
   const saveOnlyBtn = UI.el('button', { class: 'btn btn-outline' }, '保存');
   saveOnlyBtn.addEventListener('click', async () => {
@@ -492,7 +490,8 @@ route('#/proxy', async (c) => {
       full.routing = local.routing;
       full.log = local.log;
       await API.post('/api/config/apply', full);
-      UI.toast('已保存并应用', 'ok');
+      UI.toast('已保存并应用，正在刷新...', 'ok');
+      setTimeout(() => location.reload(), 600);
     } catch (e) { UI.toast('保存失败：' + e.message, 'err'); saveBtn.disabled = false; saveBtn.textContent = '保存并应用'; }
   });
   actions.appendChild(saveOnlyBtn);
@@ -534,7 +533,8 @@ route('#/editor', async (c) => {
     try {
       await API.put('/api/profiles/' + encodeURIComponent(current), ta.value);
       await API.post('/api/config/apply', await API.get('/api/config'));
-      UI.toast('已保存并应用', 'ok');
+      UI.toast('已保存并应用，正在刷新...', 'ok');
+      setTimeout(() => location.reload(), 600);
     } catch (e) { UI.toast('保存失败：' + e.message, 'err'); }
     applyBtn.disabled = false; applyBtn.textContent = '保存并应用';
   });
