@@ -210,7 +210,7 @@ route('#/app', async (c) => {
     UI.field('面板版本', UI.el('input', { value: '1.0.0', readonly: '' })),
     UI.field('运行状态', UI.el('div', { id: 'app-status-box' })),
     UI.field('操作', UI.el('div', { class: 'row-gap' },
-      UI.el('button', { class: 'btn btn-outline btn-sm', onclick: async () => { await API.post('/api/reload'); UI.toast('已重新载入', 'ok'); } }, '重新载入'),
+      UI.el('button', { class: 'btn btn-outline btn-sm', onclick: async () => { await API.post('/api/restart-core'); UI.toast('已重启核心', 'ok'); } }, '重启核心'),
       UI.el('button', { class: 'btn btn-danger btn-sm', onclick: async () => { await API.post('/api/restart'); UI.toast('已重启', 'ok'); } }, '重启服务')
     ))
   );
