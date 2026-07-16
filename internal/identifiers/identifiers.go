@@ -9,18 +9,30 @@ import (
 )
 
 type Identifiers struct {
-	Users   []string `json:"users"`
-	Groups  []string `json:"groups"`
-	Cgroups []string `json:"cgroups"`
+	Users      []string `json:"users"`
+	Groups     []string `json:"groups"`
+	Cgroups    []string `json:"cgroups"`
+	OSType     string   `json:"os_type"` // "openwrt" 或 "linux"
 }
 
 // Get 收集系统标识符。
 func Get() *Identifiers {
+	osType := detectOSType()
 	return &Identifiers{
 		Users:   getUsers(),
 		Groups:  getGroups(),
 		Cgroups: getCgroups(),
+		OSType:  osType,
 	}
+}
+
+// detectOSType 检测系统类型：OpenWrt 或普通 Linux。
+// 判定依据：/etc/openwrt_release 存在即为 OpenWrt。
+func detectOSType() string {
+	if _, err := os.Stat("/etc/openwrt_release"); err == nil {
+		return "openwrt"
+	}
+	return "linux"
 }
 
 func getUsers() []string {
