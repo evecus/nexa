@@ -346,10 +346,12 @@ route('#/proxy', async (c) => {
   const p = JSON.parse(JSON.stringify(cfg.proxy));
   const local = { proxy: p, router: cfg.router_access_controls || [], lan: cfg.lan_access_controls || [], routing: cfg.routing, log: cfg.log };
   const users = ids.users || [], groups = ids.groups || [], cgroups = ids.cgroups || [];
+  const osType = ids.os_type || 'linux';
+  const cgroupHint = osType === 'openwrt' ? '例：services/dnsmasq' : '例：system.slice/sshd.service';
 
   c.innerHTML = '';
   const card = UI.el('div', { class: 'card' });
-  const tabs = ['基本设置', '端口与设备', '路由器代理', '局域网代理', '杂项'];
+  const tabs = ['基本设置', '端口与设备', '本机代理', '局域网代理', '杂项'];
   let active = 0;
   const tabWrap = UI.el('div', { class: 'tabs' });
   const body = UI.el('div', { class: 'mt-16' });
@@ -410,9 +412,9 @@ route('#/proxy', async (c) => {
     b.appendChild(UI.el('div', { class: 'grid-2 mt-16' },
       UI.field('TUN 设备等待超时（秒）', tto), UI.field('TUN 等待检测间隔（秒）', tin)));
   }
-  // 路由器代理
+  // 本机代理
   function renderRouter(b) {
-    b.appendChild(UI.el('div', { class: 'toggle-row' }, UI.el('span', { class: 'label-txt' }, '启用路由器代理'),
+    b.appendChild(UI.el('div', { class: 'toggle-row' }, UI.el('span', { class: 'label-txt' }, '启用本机代理'),
       UI.toggle(p.router_proxy, v => p.router_proxy = v)));
     local.router.forEach((ac, idx) => b.appendChild(acCard(ac, 'router', idx, () => local.router.splice(idx, 1))));
     const addBtn = UI.el('button', { class: 'btn btn-outline btn-sm', onclick: () => {
@@ -435,7 +437,7 @@ route('#/proxy', async (c) => {
       card.appendChild(UI.el('div', { class: 'row-fields' },
         UI.el('div', {}, UI.el('label', {}, '用户'), dynList(ac.user)),
         UI.el('div', {}, UI.el('label', {}, '用户组'), dynList(ac.group)),
-        UI.el('div', {}, UI.el('label', {}, 'CGroup'), dynList(ac.cgroup))
+        UI.el('div', {}, UI.el('label', {}, 'CGroup'), dynList(ac.cgroup), UI.el('div', { class: 'hint' }, cgroupHint))
       ));
     } else {
       card.appendChild(UI.el('div', { class: 'row-fields' },
