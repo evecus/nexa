@@ -93,9 +93,9 @@ var tmplText = "{{- /* nft 模板，规则文本 1:1 对齐原 hijack.ut。 */ -
 	"\t{{ if .RouterProxy }}\n" +
 	"\tchain router_dns_hijack {\n" +
 	"\t\t{{ range .RouterAccessControls }}\n" +
-	"\t\t{{ if lenEq0 .User }}{{ if lenEq0 .Group }}{{ if lenEq0 .Cgroup -}}\n" +
+	"\t\t{{ if and (lenEq0 .User) (lenEq0 .Group) (lenEq0 .Cgroup) -}}\n" +
 	"\t\tmeta nfproto @dns_hijack_nfproto meta l4proto { tcp, udp } th dport 53 counter {{ if .Dns }} redirect to :{{ $.DnsPort }} {{ else }} return {{ end }} #\n" +
-	"\t\t{{ else }}\n" +
+	"\t\t{{ else -}}\n" +
 	"\t\t{{ if lenGt0 .User -}}\n" +
 	"\t\tmeta nfproto @dns_hijack_nfproto meta l4proto { tcp, udp } meta skuid { {{ join \", \" .User }} } th dport 53 counter {{ if .Dns }} redirect to :{{ $.DnsPort }} {{ else }} return {{ end }} #\n" +
 	"\t\t{{ end }}\n" +
@@ -105,16 +105,16 @@ var tmplText = "{{- /* nft 模板，规则文本 1:1 对齐原 hijack.ut。 */ -
 	"\t\t{{ if eq $.CgroupsVersion 2 }}{{ if lenGt0 .Cgroup }}{{ range .Cgroup -}}\n" +
 	"\t\tmeta nfproto @dns_hijack_nfproto meta l4proto { tcp, udp } socket cgroupv2 level {{ clen . }} {{ printf \"%q\" . }} th dport 53 counter {{ if .Dns }} redirect to :{{ $.DnsPort }} {{ else }} return {{ end }} #\n" +
 	"\t\t{{ end }}{{ end }}{{ end }}\n" +
-	"\t\t{{ end }}{{ end }}{{ end }}\n" +
+	"\t\t{{ end }}\n" +
 	"\t\t{{ end }}\n" +
 	"\t}\n" +
 	"\n" +
 	"\t{{ if eq .TcpMode \"redirect\" }}\n" +
 	"\tchain router_redirect {\n" +
 	"\t\t{{ range .RouterAccessControls }}\n" +
-	"\t\t{{ if lenEq0 .User }}{{ if lenEq0 .Group }}{{ if lenEq0 .Cgroup -}}\n" +
+	"\t\t{{ if and (lenEq0 .User) (lenEq0 .Group) (lenEq0 .Cgroup) -}}\n" +
 	"\t\tmeta nfproto @proxy_nfproto meta l4proto tcp counter {{ if .Proxy }} redirect to :{{ $.RedirPort }} {{ else }} return {{ end }} #\n" +
-	"\t\t{{ else }}\n" +
+	"\t\t{{ else -}}\n" +
 	"\t\t{{ if lenGt0 .User -}}\n" +
 	"\t\tmeta nfproto @proxy_nfproto meta l4proto tcp meta skuid { {{ join \", \" .User }} } counter {{ if .Proxy }} redirect to :{{ $.RedirPort }} {{ else }} return {{ end }} #\n" +
 	"\t\t{{ end }}\n" +
@@ -124,7 +124,7 @@ var tmplText = "{{- /* nft 模板，规则文本 1:1 对齐原 hijack.ut。 */ -
 	"\t\t{{ if eq $.CgroupsVersion 2 }}{{ if lenGt0 .Cgroup }}{{ range .Cgroup -}}\n" +
 	"\t\tmeta nfproto @proxy_nfproto meta l4proto tcp socket cgroupv2 level {{ clen . }} {{ printf \"%q\" . }} counter {{ if .Proxy }} redirect to :{{ $.RedirPort }} {{ else }} return {{ end }} #\n" +
 	"\t\t{{ end }}{{ end }}{{ end }}\n" +
-	"\t\t{{ end }}{{ end }}{{ end }}\n" +
+	"\t\t{{ end }}\n" +
 	"\t\t{{ end }}\n" +
 	"\t}\n" +
 	"\t{{ end }}\n" +
@@ -132,12 +132,12 @@ var tmplText = "{{- /* nft 模板，规则文本 1:1 对齐原 hijack.ut。 */ -
 	"\t{{ if or (eq .TcpMode \"tproxy\") (eq .UdpMode \"tproxy\") }}\n" +
 	"\tchain router_tproxy {\n" +
 	"\t\t{{ range .RouterAccessControls }}\n" +
-	"\t\t{{ if lenEq0 .User }}{{ if lenEq0 .Group }}{{ if lenEq0 .Cgroup -}}\n" +
+	"\t\t{{ if and (lenEq0 .User) (lenEq0 .Group) (lenEq0 .Cgroup) -}}\n" +
 	"\t\t{{ if .Dns -}}\n" +
 	"\t\tmeta nfproto @dns_hijack_nfproto meta l4proto { tcp, udp } th dport 53 counter return #\n" +
 	"\t\t{{ end }}\n" +
 	"\t\tmeta nfproto @proxy_nfproto meta l4proto { tcp, udp } {{ if .Proxy }} meta mark set meta mark & {{ $.TproxyFwUmask }} | {{ $.TproxyFwMark }} counter accept {{ else }} counter return {{ end }} #\n" +
-	"\t\t{{ else }}\n" +
+	"\t\t{{ else -}}\n" +
 	"\t\t{{ if lenGt0 .User -}}\n" +
 	"\t\t{{ if .Dns -}}\n" +
 	"\t\tmeta nfproto @dns_hijack_nfproto meta l4proto { tcp, udp } meta skuid { {{ join \", \" .User }} } th dport 53 counter return #\n" +
@@ -156,7 +156,7 @@ var tmplText = "{{- /* nft 模板，规则文本 1:1 对齐原 hijack.ut。 */ -
 	"\t\t{{ end }}\n" +
 	"\t\tmeta nfproto @proxy_nfproto meta l4proto { tcp, udp } socket cgroupv2 level {{ clen . }} {{ printf \"%q\" . }} {{ if .Proxy }} meta mark set meta mark & {{ $.TproxyFwUmask }} | {{ $.TproxyFwMark }} counter accept {{ else }} counter return {{ end }} #\n" +
 	"\t\t{{ end }}{{ end }}{{ end }}\n" +
-	"\t\t{{ end }}{{ end }}{{ end }}\n" +
+	"\t\t{{ end }}\n" +
 	"\t\t{{ end }}\n" +
 	"\t}\n" +
 	"\t{{ end }}\n" +
@@ -164,12 +164,12 @@ var tmplText = "{{- /* nft 模板，规则文本 1:1 对齐原 hijack.ut。 */ -
 	"\t{{ if or (eq .TcpMode \"tun\") (eq .UdpMode \"tun\") }}\n" +
 	"\tchain router_tun {\n" +
 	"\t\t{{ range .RouterAccessControls }}\n" +
-	"\t\t{{ if lenEq0 .User }}{{ if lenEq0 .Group }}{{ if lenEq0 .Cgroup -}}\n" +
+	"\t\t{{ if and (lenEq0 .User) (lenEq0 .Group) (lenEq0 .Cgroup) -}}\n" +
 	"\t\t{{ if .Dns -}}\n" +
 	"\t\tmeta nfproto @dns_hijack_nfproto meta l4proto { tcp, udp } th dport 53 counter return #\n" +
 	"\t\t{{ end }}\n" +
 	"\t\tmeta nfproto @proxy_nfproto meta l4proto { tcp, udp } {{ if .Proxy }} meta mark set meta mark & {{ $.TunFwUmask }} | {{ $.TunFwMark }} counter accept {{ else }} counter return {{ end }} #\n" +
-	"\t\t{{ else }}\n" +
+	"\t\t{{ else -}}\n" +
 	"\t\t{{ if lenGt0 .User -}}\n" +
 	"\t\t{{ if .Dns -}}\n" +
 	"\t\tmeta nfproto @dns_hijack_nfproto meta l4proto { tcp, udp } meta skuid { {{ join \", \" .User }} } th dport 53 counter return #\n" +
@@ -188,7 +188,7 @@ var tmplText = "{{- /* nft 模板，规则文本 1:1 对齐原 hijack.ut。 */ -
 	"\t\t{{ end }}\n" +
 	"\t\tmeta nfproto @proxy_nfproto meta l4proto { tcp, udp } socket cgroupv2 level {{ clen . }} {{ printf \"%q\" . }} {{ if .Proxy }} meta mark set meta mark & {{ $.TunFwUmask }} | {{ $.TunFwMark }} counter accept {{ else }} counter return {{ end }} #\n" +
 	"\t\t{{ end }}{{ end }}{{ end }}\n" +
-	"\t\t{{ end }}{{ end }}{{ end }}\n" +
+	"\t\t{{ end }}\n" +
 	"\t\t{{ end }}\n" +
 	"\t}\n" +
 	"\t{{ end }}\n" +
@@ -197,9 +197,9 @@ var tmplText = "{{- /* nft 模板，规则文本 1:1 对齐原 hijack.ut。 */ -
 	"\t{{ if .LanProxy }}\n" +
 	"\tchain lan_dns_hijack {\n" +
 	"\t\t{{ range .LanAccessControls }}\n" +
-	"\t\t{{ if lenEq0 .IP }}{{ if lenEq0 .IP6 }}{{ if lenEq0 .Mac -}}\n" +
+	"\t\t{{ if and (lenEq0 .IP) (lenEq0 .IP6) (lenEq0 .Mac) -}}\n" +
 	"\t\tmeta nfproto @dns_hijack_nfproto meta l4proto { tcp, udp } th dport 53 counter {{ if .Dns }} redirect to :{{ $.DnsPort }} {{ else }} return {{ end }} #\n" +
-	"\t\t{{ else }}\n" +
+	"\t\t{{ else -}}\n" +
 	"\t\t{{ if lenGt0 .IP }}{{ if $.DnsHijackNFProtoHas4 -}}\n" +
 	"\t\tmeta l4proto { tcp, udp } ip saddr { {{ join \", \" .IP }} } th dport 53 counter {{ if .Dns }} redirect to :{{ $.DnsPort }} {{ else }} return {{ end }} #\n" +
 	"\t\t{{ end }}{{ end }}\n" +
@@ -209,16 +209,16 @@ var tmplText = "{{- /* nft 模板，规则文本 1:1 对齐原 hijack.ut。 */ -
 	"\t\t{{ if lenGt0 .Mac -}}\n" +
 	"\t\tmeta nfproto @dns_hijack_nfproto meta l4proto { tcp, udp } ether saddr { {{ join \", \" .Mac }} } th dport 53 counter {{ if .Dns }} redirect to :{{ $.DnsPort }} {{ else }} return {{ end }} #\n" +
 	"\t\t{{ end }}\n" +
-	"\t\t{{ end }}{{ end }}{{ end }}\n" +
+	"\t\t{{ end }}\n" +
 	"\t\t{{ end }}\n" +
 	"\t}\n" +
 	"\n" +
 	"\t{{ if eq .TcpMode \"redirect\" }}\n" +
 	"\tchain lan_redirect {\n" +
 	"\t\t{{ range .LanAccessControls }}\n" +
-	"\t\t{{ if lenEq0 .IP }}{{ if lenEq0 .IP6 }}{{ if lenEq0 .Mac -}}\n" +
+	"\t\t{{ if and (lenEq0 .IP) (lenEq0 .IP6) (lenEq0 .Mac) -}}\n" +
 	"\t\tmeta nfproto @proxy_nfproto meta l4proto tcp counter {{ if .Proxy }} redirect to :{{ $.RedirPort }} {{ else }} counter return {{ end }} #\n" +
-	"\t\t{{ else }}\n" +
+	"\t\t{{ else -}}\n" +
 	"\t\t{{ if lenGt0 .IP }}{{ if $.ProxyNFProtoHas4 -}}\n" +
 	"\t\tmeta l4proto tcp ip saddr { {{ join \", \" .IP }} } counter {{ if .Proxy }} redirect to :{{ $.RedirPort }} {{ else }} return {{ end }} #\n" +
 	"\t\t{{ end }}{{ end }}\n" +
@@ -228,7 +228,7 @@ var tmplText = "{{- /* nft 模板，规则文本 1:1 对齐原 hijack.ut。 */ -
 	"\t\t{{ if lenGt0 .Mac -}}\n" +
 	"\t\tmeta nfproto @proxy_nfproto meta l4proto tcp ether saddr { {{ join \", \" .Mac }} } counter {{ if .Proxy }} redirect to :{{ $.RedirPort }} {{ else }} return {{ end }} #\n" +
 	"\t\t{{ end }}\n" +
-	"\t\t{{ end }}{{ end }}{{ end }}\n" +
+	"\t\t{{ end }}\n" +
 	"\t\t{{ end }}\n" +
 	"\t}\n" +
 	"\t{{ end }}\n" +
@@ -236,12 +236,12 @@ var tmplText = "{{- /* nft 模板，规则文本 1:1 对齐原 hijack.ut。 */ -
 	"\t{{ if or (eq .TcpMode \"tproxy\") (eq .UdpMode \"tproxy\") }}\n" +
 	"\tchain lan_tproxy {\n" +
 	"\t\t{{ range .LanAccessControls }}\n" +
-	"\t\t{{ if lenEq0 .IP }}{{ if lenEq0 .IP6 }}{{ if lenEq0 .Mac -}}\n" +
+	"\t\t{{ if and (lenEq0 .IP) (lenEq0 .IP6) (lenEq0 .Mac) -}}\n" +
 	"\t\t{{ if .Dns -}}\n" +
 	"\t\tmeta nfproto @dns_hijack_nfproto meta l4proto { tcp, udp } th dport 53 counter return #\n" +
 	"\t\t{{ end }}\n" +
 	"\t\tmeta nfproto @proxy_nfproto meta l4proto { tcp, udp } {{ if .Proxy }} meta mark set meta mark & {{ $.TproxyFwUmask }} | {{ $.TproxyFwMark }} tproxy to :{{ $.TproxyPort }} counter accept {{ else }} counter return {{ end }} #\n" +
-	"\t\t{{ else }}\n" +
+	"\t\t{{ else -}}\n" +
 	"\t\t{{ if lenGt0 .IP -}}\n" +
 	"\t\t{{ if .Dns }}{{ if $.DnsHijackNFProtoHas4 -}}\n" +
 	"\t\tmeta l4proto { tcp, udp } ip saddr { {{ join \", \" .IP }} } th dport 53 counter return #\n" +
@@ -264,7 +264,7 @@ var tmplText = "{{- /* nft 模板，规则文本 1:1 对齐原 hijack.ut。 */ -
 	"\t\t{{ end }}\n" +
 	"\t\tmeta nfproto @proxy_nfproto meta l4proto { tcp, udp } ether saddr { {{ join \", \" .Mac }} } {{ if .Proxy }} meta mark set meta mark & {{ $.TproxyFwUmask }} | {{ $.TproxyFwMark }} tproxy to :{{ $.TproxyPort }} counter accept {{ else }} counter return {{ end }} #\n" +
 	"\t\t{{ end }}\n" +
-	"\t\t{{ end }}{{ end }}{{ end }}\n" +
+	"\t\t{{ end }}\n" +
 	"\t\t{{ end }}\n" +
 	"\t}\n" +
 	"\t{{ end }}\n" +
@@ -272,12 +272,12 @@ var tmplText = "{{- /* nft 模板，规则文本 1:1 对齐原 hijack.ut。 */ -
 	"\t{{ if or (eq .TcpMode \"tun\") (eq .UdpMode \"tun\") }}\n" +
 	"\tchain lan_tun {\n" +
 	"\t\t{{ range .LanAccessControls }}\n" +
-	"\t\t{{ if lenEq0 .IP }}{{ if lenEq0 .IP6 }}{{ if lenEq0 .Mac -}}\n" +
+	"\t\t{{ if and (lenEq0 .IP) (lenEq0 .IP6) (lenEq0 .Mac) -}}\n" +
 	"\t\t{{ if .Dns -}}\n" +
 	"\t\tmeta nfproto @dns_hijack_nfproto meta l4proto { tcp, udp } th dport 53 counter return #\n" +
 	"\t\t{{ end }}\n" +
 	"\t\tmeta nfproto @proxy_nfproto meta l4proto { tcp, udp } {{ if .Proxy }} meta mark set meta mark & {{ $.TunFwUmask }} | {{ $.TunFwMark }} counter accept {{ else }} counter return {{ end }} #\n" +
-	"\t\t{{ else }}\n" +
+	"\t\t{{ else -}}\n" +
 	"\t\t{{ if lenGt0 .IP -}}\n" +
 	"\t\t{{ if .Dns }}{{ if $.DnsHijackNFProtoHas4 -}}\n" +
 	"\t\tmeta l4proto { tcp, udp } ip saddr { {{ join \", \" .IP }} } th dport 53 counter return #\n" +
@@ -300,7 +300,7 @@ var tmplText = "{{- /* nft 模板，规则文本 1:1 对齐原 hijack.ut。 */ -
 	"\t\t{{ end }}\n" +
 	"\t\tmeta nfproto @proxy_nfproto meta l4proto { tcp, udp } ether saddr { {{ join \", \" .Mac }} } {{ if .Proxy }} meta mark set meta mark & {{ $.TunFwUmask }} | {{ $.TunFwMark }} counter accept {{ else }} counter return {{ end }} #\n" +
 	"\t\t{{ end }}\n" +
-	"\t\t{{ end }}{{ end }}{{ end }}\n" +
+	"\t\t{{ end }}\n" +
 	"\t\t{{ end }}\n" +
 	"\t}\n" +
 	"\t{{ end }}\n" +
