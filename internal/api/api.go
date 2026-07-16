@@ -15,6 +15,7 @@ import (
 	"github.com/nexa-proxy/nexa/internal/app"
 	"github.com/nexa-proxy/nexa/internal/auth"
 	"github.com/nexa-proxy/nexa/internal/config"
+	"github.com/nexa-proxy/nexa/internal/hosts"
 	"github.com/nexa-proxy/nexa/internal/identifiers"
 	"github.com/nexa-proxy/nexa/internal/paths"
 )
@@ -47,6 +48,7 @@ func (r *Router) Routes() http.Handler {
 		m.Get("/api/paths", r.handlePaths)
 		m.Get("/api/version", r.handleVersion)
 		m.Get("/api/identifiers", r.handleIdentifiers)
+		m.Get("/api/hosts", r.handleHosts)
 		m.Post("/api/debug", r.handleDebug)
 
 		// 配置（整体读写，对齐 UCI proxy）
@@ -134,6 +136,10 @@ func (r *Router) handleVersion(w http.ResponseWriter, _ *http.Request) {
 
 func (r *Router) handleIdentifiers(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, identifiers.Get())
+}
+
+func (r *Router) handleHosts(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, hosts.Get())
 }
 
 func (r *Router) handleDebug(w http.ResponseWriter, _ *http.Request) {
