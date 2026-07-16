@@ -224,7 +224,7 @@ func splitSpace(s string) []string {
 // Render 渲染完整 nft 规则。
 func Render(m *Model) (string, error) {
 	tmpl, err := template.New("hijack").Funcs(template.FuncMap{
-		"join":     strings.Join,
+		"join":     func(sep string, arr []string) string { return strings.Join(arr, sep) },
 		"qjoin":    qjoin,
 		"clen":     func(s string) int { return len(strings.Split(s, "/")) },
 		"hasLen":   func(arr []string, n int) bool { return len(arr) > 0 },
