@@ -45,6 +45,8 @@ type ProxySection struct {
 	RedirPort            string   `json:"redir_port"`
 	TproxyPort           string   `json:"tproxy_port"`
 	TunDevice            string   `json:"tun_device"`
+	UIPort               string   `json:"ui_port"`
+	UIPath               string   `json:"ui_path"`
 	FakeIPRange          string   `json:"fake_ip_range"`
 	FakeIP6Range         string   `json:"fake_ip6_range"`
 	ReservedIP           []string `json:"reserved_ip"`
@@ -129,12 +131,14 @@ func Default() *Config {
 			RouterProxy:            true,
 			LanProxy:               true,
 			LanInboundInterface:    []string{"lan"},
-			DnsPort:                "",
-			RedirPort:              "",
-			TproxyPort:             "",
-			TunDevice:              "",
-			FakeIPRange:            "",
-			FakeIP6Range:           "",
+			DnsPort:                "1053",
+			RedirPort:              "7892",
+			TproxyPort:             "7893",
+			TunDevice:              "tun0",
+			UIPort:                 "9090",
+			UIPath:                 "ui",
+			FakeIPRange:            "198.18.0.0/15",
+			FakeIP6Range:           "fc00::/18",
 			ReservedIP: []string{
 				"0.0.0.0/8", "10.0.0.0/8", "127.0.0.0/8", "100.64.0.0/10",
 				"169.254.0.0/16", "172.16.0.0/12", "192.168.0.0/16",
