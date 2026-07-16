@@ -21,7 +21,12 @@ const API = (() => {
     post: (p, b) => req(p, { method: 'POST', body: b }),
     put: (p, b) => req(p, { method: 'PUT', body: b }),
     del: (p) => req(p, { method: 'DELETE' }),
-    raw: (p, opts) => fetch(p, opts), // 用于下载等
+    raw: (p, opts = {}) => {
+      opts.headers = opts.headers || {};
+      const t = localStorage.getItem('nexa_token');
+      if (t) opts.headers['Authorization'] = 'Bearer ' + t;
+      return fetch(p, opts);
+    }, // 用于下载等
   };
 })();
 
@@ -329,7 +334,13 @@ route('#/profile', async (c) => {
         UI.el('td', {}, new Date(p.mtime * 1000).toLocaleString('zh-CN')),
         UI.el('td', {}, (p.size / 1024).toFixed(1) + ' KB'),
         UI.el('td', { class: 'actions' },
-          UI.el('a', { class: 'btn btn-outline btn-sm', href: '/api/profiles/' + encodeURIComponent(p.name), download: p.name }, '下载'),
+          UI.el('button', { class: 'btn btn-outline btn-sm', onclick: async () => {
+            const blob = await API.raw('/api/profiles/' + encodeURIComponent(p.name));
+            const url = URL.createObjectURL(await blob.blob());
+            const a = document.createElement('a');
+            a.href = url; a.download = p.name; a.click();
+            URL.revokeObjectURL(url);
+          } }, '下载'),
           UI.el('button', { class: 'btn btn-danger btn-sm', onclick: async () => {
             if (!confirm('确定删除 ' + p.name + '？')) return;
             await API.del('/api/profiles/' + encodeURIComponent(p.name));
