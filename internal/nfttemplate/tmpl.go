@@ -3,7 +3,7 @@ package nfttemplate
 // tmplText 是 nftables 劫持表模板，规则文本 1:1 对齐原 hijack.ut。
 // 使用 raw string 字面量保存，避免与 Go 语法冲突。
 var tmplText = "{{- /* nft 模板，规则文本 1:1 对齐原 hijack.ut。 */ -}}\n" +
-	"table inet proxy {\n" +
+	"table inet nexa {\n" +
 	"\tset dns_hijack_nfproto {\n" +
 	"\t\ttype nf_proto\n" +
 	"\t\tflags interval\n" +
