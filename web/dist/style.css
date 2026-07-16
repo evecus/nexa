@@ -199,3 +199,33 @@ textarea { font-family: "SF Mono", "Consolas", monospace; font-size: 13px; resiz
 .right-actions { display: flex; gap: 8px; }
 select[multiple] { min-height: 90px; }
 .scroll-x { overflow-x: auto; }
+
+/* ── 移动端适配 ────────────────────── */
+.menu-btn { display: none; margin-right: 12px; padding: 4px 10px; font-size: 18px; }
+.sidebar-overlay { display: none; }
+
+@media (max-width: 768px) {
+  .menu-btn { display: inline-flex; }
+  .sidebar-overlay {
+    display: block; position: fixed; inset: 0; background: rgba(0,0,0,.4);
+    z-index: 998; opacity: 0; pointer-events: none; transition: opacity .25s;
+  }
+  .sidebar-overlay.open { opacity: 1; pointer-events: auto; }
+  .sidebar {
+    position: fixed; left: 0; top: 0; bottom: 0; z-index: 999;
+    transform: translateX(-100%); transition: transform .25s;
+  }
+  .sidebar.open { transform: translateX(0); }
+  .content { padding: 16px 12px; }
+  .card { padding: 16px; }
+  .topbar { padding: 0 12px; }
+  .topbar .title { font-size: 15px; }
+  .login-card { width: 90vw; padding: 28px 20px; }
+  .log-box { height: 280px; }
+  .ac-row .row-head { flex-wrap: wrap; gap: 8px; }
+  .flex-between { flex-wrap: wrap; gap: 8px; }
+  .right-actions { flex-wrap: wrap; }
+  .table { font-size: 12px; }
+  .table th, .table td { padding: 8px 6px; }
+  .row-gap { gap: 6px; }
+}
