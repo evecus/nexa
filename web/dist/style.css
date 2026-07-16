@@ -173,6 +173,8 @@ textarea { font-family: "SF Mono", "Consolas", monospace; font-size: 13px; resiz
 .chip .x:hover { opacity: 1; }
 .chip-add { background: none; border: 1px dashed var(--border); color: var(--muted); padding: 3px 8px; border-radius: 6px; font-size: 12px; cursor: pointer; }
 .chip-add:hover { border-color: var(--primary); color: var(--primary); }
+.chip-select { font-size: 12px; padding: 3px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); cursor: pointer; max-width: 180px; }
+.chip-select:focus { outline: none; border-color: var(--primary); }
 
 /* 日志区 */
 .log-box {
