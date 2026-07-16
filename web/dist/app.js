@@ -75,6 +75,7 @@ const NAV = [
   { hash: '#/proxy',   name: '代理配置', icon: '◈' },
   { hash: '#/editor',  name: '编辑器',   icon: '✎' },
   { hash: '#/log',     name: '日志',     icon: '☰' },
+  { hash: '#/settings', name: '设置',   icon: '⚙' },
 ];
 
 function renderLayout() {
@@ -630,6 +631,37 @@ route('#/log', async (c) => {
 
   // 离开页面时清理
   window.__logCleanup = () => { clearInterval(pollApp); if (evtSrc) evtSrc.close(); };
+});
+
+// ── 页面：设置 ─────────────────────
+route('#/settings', async (c) => {
+  c.innerHTML = '';
+  const card = UI.el('div', { class: 'card' });
+  card.appendChild(UI.el('div', { class: 'card-title' }, '用户设置'));
+  card.appendChild(UI.el('div', { class: 'card-desc' }, '修改登录账号的用户名和密码'));
+
+  const userI = UI.input('text', 'admin', '用户名');
+  const passI = UI.input('password', '', '新密码');
+  const pass2I = UI.input('password', '', '确认新密码');
+  card.appendChild(UI.field('用户名', userI));
+  card.appendChild(UI.field('新密码', passI, '留空则不修改密码'));
+  card.appendChild(UI.field('确认新密码', pass2I));
+
+  const saveBtn = UI.el('button', { class: 'btn btn-primary' }, '保存');
+  saveBtn.addEventListener('click', async () => {
+    if (!userI.value) { UI.toast('用户名不能为空', 'err'); return; }
+    if (passI.value && passI.value !== pass2I.value) { UI.toast('两次密码不一致', 'err'); return; }
+    if (!passI.value) { UI.toast('请输入新密码', 'err'); return; }
+    saveBtn.disabled = true; saveBtn.textContent = '保存中...';
+    try {
+      await API.put('/api/auth/password', { username: userI.value, password: passI.value });
+      UI.toast('用户数据已保存，请重新登录', 'ok');
+      setTimeout(() => { localStorage.removeItem('nexa_token'); location.hash = '#/login'; }, 800);
+    } catch (e) { UI.toast('保存失败：' + e.message, 'err'); }
+    saveBtn.disabled = false; saveBtn.textContent = '保存';
+  });
+  card.appendChild(UI.el('div', { class: 'mt-20' }, saveBtn));
+  c.appendChild(card);
 });
 
 // 每次路由前清理上一页的资源
