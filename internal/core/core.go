@@ -121,18 +121,20 @@ func (m *Manager) Start(cfg *config.Config) error {
 	cmd.Stderr = newLineWriter(m.log)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
-	// GID 绕过：核心以 root 运行，加入 nexa 附加组，nft 用 meta skgid 匹配绕过
+	// GID 绕过：核心以 root 运行，主 GID 设为 nexa 组，nft 用 meta skgid 匹配绕过
+	// meta skgid 匹配的是主 GID，不是附加组，所以必须把 nexa 组设为主 GID，
+	// 同时把 root 组（GID 0）加到附加组里，保持 root 权限正常。
 	if cfg.Proxy.BypassGid {
 		gid, err := EnsureNexaGroup()
 		if err != nil {
 			m.log.App("核心", "警告：创建 nexa 组失败："+err.Error()+"，GID 绕过可能失效。")
 		} else {
 			cmd.SysProcAttr.Credential = &syscall.Credential{
-				Uid:    0, // root
-				Gid:    0, // root
-				Groups: []uint32{uint32(gid)},
+				Uid:    0,             // root
+				Gid:    uint32(gid),   // nexa 组为主 GID，meta skgid 匹配这个
+				Groups: []uint32{0},   // root 组为附加组，保持权限
 			}
-			m.log.App("核心", fmt.Sprintf("已将 nexa 附加组（GID %d）加入核心进程。", gid))
+			m.log.App("核心", fmt.Sprintf("已将 nexa 组（GID %d）设为核心进程主 GID。", gid))
 		}
 	}
 
