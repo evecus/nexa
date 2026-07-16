@@ -424,10 +424,12 @@ route('#/proxy', async (c) => {
   function acCard(ac, type, idx, ondel) {
     const card = UI.el('div', { class: 'ac-row' });
     card.appendChild(UI.el('div', { class: 'row-head' },
-      UI.el('div', { class: 'row-gap' }, UI.toggle(ac.enabled, v => ac.enabled = v),
-        UI.el('span', { class: 'muted' }, 'DNS'), UI.toggle(ac.dns, v => ac.dns = v),
-        UI.el('span', { class: 'muted' }, '代理'), UI.toggle(ac.proxy, v => ac.proxy = v)),
-      UI.el('button', { class: 'btn btn-danger btn-sm', onclick: () => { ondel(); renderBody(); } }, '删除')
+      UI.el('div', { class: 'row-gap' }, UI.toggle(ac.enabled, v => ac.enabled = v), UI.el('span', { class: 'label-txt' }, '启用')),
+      UI.el('div', { class: 'row-gap' },
+        UI.toggle(ac.dns, v => ac.dns = v), UI.el('span', { class: 'muted' }, 'DNS'),
+        UI.toggle(ac.proxy, v => ac.proxy = v), UI.el('span', { class: 'muted' }, '代理'),
+        UI.el('button', { class: 'btn btn-danger btn-sm', onclick: () => { ondel(); renderBody(); } }, '删除')
+      )
     ));
     if (type === 'router') {
       card.appendChild(UI.el('div', { class: 'row-fields' },
