@@ -5,6 +5,7 @@ package netmanager
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
@@ -125,8 +126,10 @@ func (m *Manager) Apply(cfg *config.Config) error {
 	}
 	cmd := exec.Command("nft", "-f", "-")
 	cmd.Stdin = strings.NewReader(ruleset)
+	var nftErr bytes.Buffer
+	cmd.Stderr = &nftErr
 	if err := cmd.Run(); err != nil {
-		m.log.App("代理", "流量劫持失败。")
+		m.log.App("代理", "流量劫持失败："+strings.TrimSpace(nftErr.String()))
 		return err
 	}
 	// 校验表是否存在
