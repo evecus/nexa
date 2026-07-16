@@ -175,7 +175,7 @@ textarea { font-family: "SF Mono", "Consolas", monospace; font-size: 13px; resiz
 
 /* 日志区 */
 .log-box {
-  background: #1e2533; color: #d4d8e0; border-radius: var(--radius-sm); padding: 14px;
+  background: #ffffff; color: #1a202c; border: 2px solid #1a202c; border-radius: var(--radius-sm); padding: 14px;
   font-family: "SF Mono", "Consolas", monospace; font-size: 12px; line-height: 1.7;
   height: 420px; overflow-y: auto; white-space: pre-wrap; word-break: break-all;
 }
