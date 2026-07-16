@@ -119,7 +119,10 @@ func (m *Manager) Start(cfg *config.Config) error {
 	cmd := exec.CommandContext(ctx, c.RunBinary, args...)
 	cmd.Stdout = newLineWriter(m.log)
 	cmd.Stderr = newLineWriter(m.log)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setpgid:   true,
+		Pdeathsig: syscall.SIGTERM, // nexa 被 kill -9 时内核自动杀掉核心子进程
+	}
 
 	// GID 绕过：核心以 root 运行，主 GID 设为 nexa 组，nft 用 meta skgid 匹配绕过
 	// meta skgid 匹配的是主 GID，不是附加组，所以必须把 nexa 组设为主 GID，
