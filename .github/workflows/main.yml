@@ -58,5 +58,5 @@ jobs:
           tag_name: test
           name: nexa test
           files: |
-            artifacts/nexa-linux-amd64
-            artifacts/nexa-linux-arm64
+            nexa-linux-amd64
+            nexa-linux-arm64
