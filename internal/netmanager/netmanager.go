@@ -38,15 +38,8 @@ func (m *Manager) Apply(cfg *config.Config) error {
 	tproxyEnable := p.TcpMode == "tproxy" || p.UdpMode == "tproxy"
 	tunEnable := p.TcpMode == "tun" || p.UdpMode == "tun"
 
-	// cgroupv1 兼容（对齐 proxy.init:163-167）
-	if cgroupsVersion() == 1 {
-		cgPath := "/sys/fs/cgroup/net_cls/" + cfg.Routing.CgroupName
-		_ = os.MkdirAll(cgPath, 0755)
-		_ = os.WriteFile(cgPath+"/net_cls.classid", []byte(cfg.Routing.CgroupID), 0644)
-		if data, err := os.ReadFile(paths.PidFilePath); err == nil {
-			_ = os.WriteFile(cgPath+"/cgroup.procs", data, 0644)
-		}
-	}
+	// cgroup 已在 core.Start 阶段创建并放入核心 pid（见 core.go placeIntoCgroup），
+	// 此处不再重复创建，避免时序竞争。
 
 	// bridge-nf-call 兼容（对齐 proxy.init:170-185）
 	if tproxyEnable && isModuleLoaded("br_netfilter") {
