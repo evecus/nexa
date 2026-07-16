@@ -58,6 +58,7 @@ func (r *Router) Routes() http.Handler {
 		m.Get("/api/status", r.handleStatus)
 		m.Post("/api/reload", r.handleReload)
 		m.Post("/api/restart", r.handleRestart)
+		m.Post("/api/restart-core", r.handleRestartCore)
 		m.Post("/api/start", r.handleStart)
 		m.Post("/api/stop", r.handleStop)
 
@@ -212,6 +213,21 @@ func (r *Router) handleRestart(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	if err := r.a.Restart(cfg); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// handleRestartCore 仅重启代理核心进程，不重建防火墙规则。
+// 适用于核心运行时快速重启（如切换 profile 后），避免网络规则重置导致的短暂中断。
+func (r *Router) handleRestartCore(w http.ResponseWriter, _ *http.Request) {
+	cfg, err := r.a.LoadConfig()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := r.a.Core.Restart(cfg); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
