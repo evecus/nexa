@@ -55,6 +55,17 @@ func New() (*App, error) {
 	sch := scheduler.New(log, mgr)
 
 	a := &App{Store: st, Log: log, Core: mgr, Net: net, Sched: sch}
+
+	// 核心放弃重启时自动清理网络规则
+	mgr.OnGiveUp(func() {
+		cfg, err := a.LoadConfig()
+		if err != nil {
+			return
+		}
+		net.Cleanup(cfg)
+		a.Log.App("App", "核心启动失败，已清理网络规则。")
+	})
+
 	return a, nil
 }
 
