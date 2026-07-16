@@ -70,7 +70,7 @@ const routes = {};
 function route(path, fn) { routes[path] = fn; }
 
 const NAV = [
-  { hash: '#/app',     name: '插件配置', icon: '◆' },
+  { hash: '#/app',     name: '启动配置', icon: '◆' },
   { hash: '#/profile', name: '配置文件', icon: '▦' },
   { hash: '#/proxy',   name: '代理配置', icon: '◈' },
   { hash: '#/editor',  name: '编辑器',   icon: '✎' },
@@ -207,7 +207,7 @@ route('#/app', async (c) => {
   const statusCard = UI.el('div', { class: 'card' });
   statusCard.appendChild(UI.el('div', { class: 'card-title' }, '状态'));
   const sRow = UI.el('div', { class: 'grid-3' },
-    UI.field('插件版本', UI.el('input', { value: ver.binary || ver.app || '-', readonly: '' })),
+    UI.field('面板版本', UI.el('input', { value: '1.0.0', readonly: '' })),
     UI.field('运行状态', UI.el('div', { id: 'app-status-box' })),
     UI.field('操作', UI.el('div', { class: 'row-gap' },
       UI.el('button', { class: 'btn btn-outline btn-sm', onclick: async () => { await API.post('/api/reload'); UI.toast('已重新载入', 'ok'); } }, '重新载入'),
@@ -241,15 +241,6 @@ route('#/app', async (c) => {
   cronI.addEventListener('input', () => local.config.scheduled_restart_cron = cronI.value);
   basic.appendChild(UI.field('定时重启 Cron 表达式', cronI));
   c.appendChild(basic);
-
-  // procd 配置
-  const procd = UI.el('div', { class: 'card' });
-  procd.appendChild(UI.el('div', { class: 'card-title' }, 'procd 配置'));
-  procd.appendChild(UI.el('div', { class: 'toggle-row' },
-    UI.el('span', { class: 'label-txt' }, '快速重载（HUP 信号）'),
-    UI.toggle(local.procd.fast_reload, v => local.procd.fast_reload = v)
-  ));
-  c.appendChild(procd);
 
   // 保存按钮
   const saveBar = UI.el('div', { class: 'flex-between' });
