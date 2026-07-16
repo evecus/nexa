@@ -59,6 +59,9 @@ func (m *Manager) Start(cfg *config.Config) error {
 	}
 	m.mu.Unlock()
 
+	// 清理残留的核心进程（nexa 非正常退出时 pidfile 可能残留）
+	m.killStaleCore()
+
 	c := &cfg.Config
 
 	// 校验可执行文件
@@ -282,6 +285,40 @@ func (m *Manager) Restart(cfg *config.Config) error {
 		time.Sleep(100 * time.Millisecond)
 	}
 	return m.Start(cfg)
+}
+
+// killStaleCore 读取 pidfile，若其中有 pid 且对应进程仍在运行则杀掉。
+// 处理 nexa 被 kill -9 后核心进程残留的情况。
+func (m *Manager) killStaleCore() {
+	data, err := os.ReadFile(paths.PidFilePath)
+	if err != nil {
+		return
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil || pid <= 0 {
+		return
+	}
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return
+	}
+	// 发送信号 0 检测进程是否存活
+	if err := proc.Signal(syscall.Signal(0)); err != nil {
+		// 进程不存在，仅清理 pidfile
+		_ = os.Remove(paths.PidFilePath)
+		return
+	}
+	m.log.App("核心", fmt.Sprintf("检测到残留核心进程 PID %d，正在终止。", pid))
+	// 先 SIGTERM，等 2 秒再 SIGKILL
+	_ = proc.Signal(syscall.SIGTERM)
+	time.Sleep(500 * time.Millisecond)
+	// 检测是否已退出
+	if err := proc.Signal(syscall.Signal(0)); err == nil {
+		time.Sleep(1500 * time.Millisecond)
+		_ = proc.Kill()
+	}
+	_ = os.Remove(paths.PidFilePath)
+	m.log.App("核心", "已清理残留核心进程。")
 }
 
 func copyFile(src, dst string) error {
