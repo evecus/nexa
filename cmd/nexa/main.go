@@ -60,18 +60,20 @@ func main() {
 
 	log.Printf("nexa 监听 %s（默认账户 admin/admin，请尽快修改）", *addr)
 
-	// 信号处理：优雅关闭
+	// 信号处理：优雅关闭，清理网络规则并杀掉核心进程
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-sigCh
-		log.Println("收到退出信号，正在关闭...")
+		log.Println("收到退出信号，正在清理并关闭...")
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = srv.Shutdown(ctx)
+		// 完整清理：杀核心 + 清理网络规则
 		_ = a.Stop()
 		a.Sched.Stop()
 		_ = a.Store.Close()
+		log.Println("已清理完成，退出。")
 		os.Exit(0)
 	}()
 
