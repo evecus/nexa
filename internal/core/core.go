@@ -213,9 +213,9 @@ func cgroupsVersion() int {
 }
 
 // watch 对齐 procd respawn：进程退出后若非主动停止则重启。
-// 若核心连续快速退出（5 秒内）超过 3 次，视为启动失败，不再重试。
+// 若核心快速退出（5 秒内），视为启动失败，不再重试并清理网络规则。
 func (m *Manager) watch(cfg *config.Config) {
-	const maxCrashes = 3
+	const maxCrashes = 1
 	const crashWindow = 5 * time.Second
 	for {
 		m.mu.Lock()
