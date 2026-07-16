@@ -82,6 +82,7 @@ function renderLayout() {
   const app = document.getElementById('app');
   app.innerHTML = '';
   const layout = UI.el('div', { class: 'layout' });
+  const overlay = UI.el('div', { class: 'sidebar-overlay', onclick: () => { document.querySelector('.sidebar').classList.remove('open'); overlay.classList.remove('open'); } });
   const sidebar = UI.el('div', { class: 'sidebar' });
   sidebar.appendChild(UI.el('div', { class: 'logo' },
     UI.el('div', { class: 'dot' }, 'N'),
@@ -90,7 +91,7 @@ function renderLayout() {
   NAV.forEach(n => {
     const item = UI.el('div', {
       class: 'nav-item' + (location.hash === n.hash ? ' active' : ''),
-      onclick: () => { location.hash = n.hash; }
+      onclick: () => { location.hash = n.hash; document.querySelector('.sidebar').classList.remove('open'); overlay.classList.remove('open'); }
     }, UI.el('span', { class: 'ico' }, n.icon), n.name);
     sidebar.appendChild(item);
   });
@@ -100,13 +101,16 @@ function renderLayout() {
   } }, UI.el('span', { class: 'ico' }, '⏻'), '退出'));
 
   const main = UI.el('div', { class: 'main' });
+  const menuBtn = UI.el('button', { class: 'btn btn-outline menu-btn', onclick: () => { document.querySelector('.sidebar').classList.toggle('open'); overlay.classList.toggle('open'); } }, '☰');
   const topbar = UI.el('div', { class: 'topbar' },
     UI.el('div', { class: 'title', id: 'page-title' }, 'Nexa'),
     UI.el('div', { class: 'right', id: 'topbar-right' })
   );
+  topbar.insertBefore(menuBtn, topbar.firstChild);
   const content = UI.el('div', { class: 'content', id: 'content' });
   main.appendChild(topbar);
   main.appendChild(content);
+  layout.appendChild(overlay);
   layout.appendChild(sidebar);
   layout.appendChild(main);
   app.appendChild(layout);
