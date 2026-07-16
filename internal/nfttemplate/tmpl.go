@@ -103,7 +103,7 @@ var tmplText = "{{- /* nft 模板，规则文本 1:1 对齐原 hijack.ut。 */ -
 	"\t\tmeta nfproto @dns_hijack_nfproto meta l4proto { tcp, udp } meta skgid { {{ join \", \" .Group }} } th dport 53 counter {{ if .Dns }} redirect to :{{ $.DnsPort }} {{ else }} return {{ end }} #\n" +
 	"\t\t{{ end }}\n" +
 	"\t\t{{ if eq $.CgroupsVersion 2 }}{{ if lenGt0 .Cgroup }}{{ range .Cgroup -}}\n" +
-	"\t\tmeta nfproto @dns_hijack_nfproto meta l4proto { tcp, udp } socket cgroupv2 level {{ clen . }} {{ printf \"%q\" . }} th dport 53 counter {{ if .Dns }} redirect to :{{ $.DnsPort }} {{ else }} return {{ end }} #\n" +
+	"\t\tmeta nfproto @dns_hijack_nfproto meta l4proto { tcp, udp } socket cgroupv2 level {{ clen . }} {{ printf \"%q\" . }} th dport 53 counter {{ if $.Dns }} redirect to :{{ $.DnsPort }} {{ else }} return {{ end }} #\n" +
 	"\t\t{{ end }}{{ end }}{{ end }}\n" +
 	"\t\t{{ end }}\n" +
 	"\t\t{{ end }}\n" +
@@ -122,7 +122,7 @@ var tmplText = "{{- /* nft 模板，规则文本 1:1 对齐原 hijack.ut。 */ -
 	"\t\tmeta nfproto @proxy_nfproto meta l4proto tcp meta skgid { {{ join \", \" .Group }} } counter {{ if .Proxy }} redirect to :{{ $.RedirPort }} {{ else }} return {{ end }} #\n" +
 	"\t\t{{ end }}\n" +
 	"\t\t{{ if eq $.CgroupsVersion 2 }}{{ if lenGt0 .Cgroup }}{{ range .Cgroup -}}\n" +
-	"\t\tmeta nfproto @proxy_nfproto meta l4proto tcp socket cgroupv2 level {{ clen . }} {{ printf \"%q\" . }} counter {{ if .Proxy }} redirect to :{{ $.RedirPort }} {{ else }} return {{ end }} #\n" +
+	"\t\tmeta nfproto @proxy_nfproto meta l4proto tcp socket cgroupv2 level {{ clen . }} {{ printf \"%q\" . }} counter {{ if $.Proxy }} redirect to :{{ $.RedirPort }} {{ else }} return {{ end }} #\n" +
 	"\t\t{{ end }}{{ end }}{{ end }}\n" +
 	"\t\t{{ end }}\n" +
 	"\t\t{{ end }}\n" +
@@ -151,10 +151,10 @@ var tmplText = "{{- /* nft 模板，规则文本 1:1 对齐原 hijack.ut。 */ -
 	"\t\tmeta nfproto @proxy_nfproto meta l4proto { tcp, udp } meta skgid { {{ join \", \" .Group }} } {{ if .Proxy }} meta mark set meta mark & {{ $.TproxyFwUmask }} | {{ $.TproxyFwMark }} counter accept {{ else }} counter return {{ end }} #\n" +
 	"\t\t{{ end }}\n" +
 	"\t\t{{ if eq $.CgroupsVersion 2 }}{{ if lenGt0 .Cgroup }}{{ range .Cgroup -}}\n" +
-	"\t\t{{ if .Dns -}}\n" +
+	"\t\t{{ if $.Dns -}}\n" +
 	"\t\tmeta nfproto @dns_hijack_nfproto meta l4proto { tcp, udp } socket cgroupv2 level {{ clen . }} {{ printf \"%q\" . }} th dport 53 counter return #\n" +
 	"\t\t{{ end }}\n" +
-	"\t\tmeta nfproto @proxy_nfproto meta l4proto { tcp, udp } socket cgroupv2 level {{ clen . }} {{ printf \"%q\" . }} {{ if .Proxy }} meta mark set meta mark & {{ $.TproxyFwUmask }} | {{ $.TproxyFwMark }} counter accept {{ else }} counter return {{ end }} #\n" +
+	"\t\tmeta nfproto @proxy_nfproto meta l4proto { tcp, udp } socket cgroupv2 level {{ clen . }} {{ printf \"%q\" . }} {{ if $.Proxy }} meta mark set meta mark & {{ $.TproxyFwUmask }} | {{ $.TproxyFwMark }} counter accept {{ else }} counter return {{ end }} #\n" +
 	"\t\t{{ end }}{{ end }}{{ end }}\n" +
 	"\t\t{{ end }}\n" +
 	"\t\t{{ end }}\n" +
@@ -183,10 +183,10 @@ var tmplText = "{{- /* nft 模板，规则文本 1:1 对齐原 hijack.ut。 */ -
 	"\t\tmeta nfproto @proxy_nfproto meta l4proto { tcp, udp } meta skgid { {{ join \", \" .Group }} } {{ if .Proxy }} meta mark set meta mark & {{ $.TunFwUmask }} | {{ $.TunFwMark }} counter accept {{ else }} counter return {{ end }} #\n" +
 	"\t\t{{ end }}\n" +
 	"\t\t{{ if eq $.CgroupsVersion 2 }}{{ if lenGt0 .Cgroup }}{{ range .Cgroup -}}\n" +
-	"\t\t{{ if .Dns -}}\n" +
+	"\t\t{{ if $.Dns -}}\n" +
 	"\t\tmeta nfproto @dns_hijack_nfproto meta l4proto { tcp, udp } socket cgroupv2 level {{ clen . }} {{ printf \"%q\" . }} th dport 53 counter return #\n" +
 	"\t\t{{ end }}\n" +
-	"\t\tmeta nfproto @proxy_nfproto meta l4proto { tcp, udp } socket cgroupv2 level {{ clen . }} {{ printf \"%q\" . }} {{ if .Proxy }} meta mark set meta mark & {{ $.TunFwUmask }} | {{ $.TunFwMark }} counter accept {{ else }} counter return {{ end }} #\n" +
+	"\t\tmeta nfproto @proxy_nfproto meta l4proto { tcp, udp } socket cgroupv2 level {{ clen . }} {{ printf \"%q\" . }} {{ if $.Proxy }} meta mark set meta mark & {{ $.TunFwUmask }} | {{ $.TunFwMark }} counter accept {{ else }} counter return {{ end }} #\n" +
 	"\t\t{{ end }}{{ end }}{{ end }}\n" +
 	"\t\t{{ end }}\n" +
 	"\t\t{{ end }}\n" +
