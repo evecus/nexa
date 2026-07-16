@@ -219,7 +219,7 @@ route('#/app', async (c) => {
           const port = full.proxy.ui_port || '9090';
           const path = (full.proxy.ui_path || 'ui').replace(/^\/+|\/+$/g, '');
           const host = location.hostname;
-          window.open('http://' + host + ':' + port + '/' + path, '_blank');
+          window.open(host + ':' + port + '/' + path, '_blank');
         } catch (e) { UI.toast('获取配置失败', 'err'); }
       } }, '打开UI面板')
     ))
