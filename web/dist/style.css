@@ -183,6 +183,37 @@ textarea { font-family: "SF Mono", "Consolas", monospace; font-size: 13px; resiz
   height: 420px; overflow-y: auto; white-space: pre-wrap; word-break: break-all;
 }
 
+/* 代码编辑器 */
+.code-editor {
+  position: relative; display: flex; height: 480px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden;
+  background: #fff;
+}
+.code-gutter {
+  flex: 0 0 44px; padding: 12px 8px 12px 0; text-align: right; overflow: hidden;
+  font-family: "SF Mono", "Consolas", "Monaco", monospace; font-size: 13px; line-height: 1.6;
+  color: #a0aec0; white-space: pre; user-select: none; background: #f7fafc; border-right: 1px solid var(--border);
+}
+.code-area { position: relative; flex: 1 1 auto; overflow: hidden; }
+.code-highlight, .code-input {
+  position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+  margin: 0; border: 0; padding: 12px;
+  font-family: "SF Mono", "Consolas", "Monaco", monospace; font-size: 13px; line-height: 1.6;
+  tab-size: 2; -moz-tab-size: 2; white-space: pre; word-break: normal; overflow: auto;
+}
+.code-highlight { z-index: 0; pointer-events: none; color: var(--text); background: transparent; }
+.code-highlight code { font-family: inherit; font-size: inherit; }
+.code-input {
+  z-index: 1; color: transparent; caret-color: var(--text);
+  background: transparent; resize: none; outline: none;
+}
+.code-input::selection { background: rgba(79,124,255,.2); }
+.tok-key { color: #4f7cff; }
+.tok-str { color: #38a169; }
+.tok-num { color: #d69e2e; }
+.tok-kw { color: #805ad5; }
+.tok-com { color: #a0aec0; font-style: italic; }
+
 /* 提示 */
 .toast {
   position: fixed; top: 24px; right: 24px; padding: 12px 18px; border-radius: var(--radius-sm);
