@@ -122,7 +122,7 @@ func (m *Manager) Start(cfg *config.Config) error {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
 	// GID 绕过：核心以 root 运行，加入 nexa 附加组，nft 用 meta skgid 匹配绕过
-	if p.BypassGid {
+	if cfg.Proxy.BypassGid {
 		gid, err := EnsureNexaGroup()
 		if err != nil {
 			m.log.App("核心", "警告：创建 nexa 组失败："+err.Error()+"，GID 绕过可能失效。")
