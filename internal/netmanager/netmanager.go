@@ -42,7 +42,8 @@ func (m *Manager) Apply(cfg *config.Config) error {
 	// 此处不再重复创建，避免时序竞争。
 
 	// bridge-nf-call 兼容（对齐 proxy.init:170-185）
-	if tproxyEnable && isModuleLoaded("br_netfilter") {
+	// 仅在系统存在网桥且加载了 br_netfilter 模块时处理
+	if tproxyEnable && hasBridge() && isModuleLoaded("br_netfilter") {
 		if p.IPv4Proxy {
 			if sysctlGet("net.bridge.bridge-nf-call-iptables") == "1" {
 				_ = os.WriteFile(paths.BridgeNfCallIptablesFlag, nil, 0644)
@@ -137,7 +138,8 @@ func (m *Manager) Apply(cfg *config.Config) error {
 	return nil
 }
 
-// FirewallInclude 对齐 firewall_include.sh：TUN 模式时往 fw4 input/forward 插 accept 规则。
+// FirewallInclude 对齐 firewall_include.sh：TUN 模式时往防火墙 input/forward 插 accept 规则。
+// 优先使用 OpenWrt 的 fw4 表；若不存在则回退到 inet filter 表（普通 Linux 兼容）。
 func (m *Manager) FirewallInclude(cfg *config.Config) {
 	p := &cfg.Proxy
 	if !cfg.Config.Enabled || !p.Enabled {
@@ -149,12 +151,24 @@ func (m *Manager) FirewallInclude(cfg *config.Config) {
 	if p.TunDevice == "" {
 		return
 	}
-	run("nft", "insert", "rule", "inet", "fw4", "input", "iifname", p.TunDevice, "counter", "accept", "comment", "nexa")
-	run("nft", "insert", "rule", "inet", "fw4", "forward", "oifname", p.TunDevice, "counter", "accept", "comment", "nexa")
-	run("nft", "insert", "rule", "inet", "fw4", "forward", "iifname", p.TunDevice, "counter", "accept", "comment", "nexa")
+	// 检测可用的防火墙表：优先 fw4（OpenWrt），回退 filter（普通 Linux）
+	fwTable := "fw4"
+	if out, err := exec.Command("nft", "list", "table", "inet", "fw4").CombinedOutput(); err != nil {
+		// fw4 不存在，尝试 inet filter
+		if out2, err2 := exec.Command("nft", "list", "table", "inet", "filter").CombinedOutput(); err2 == nil {
+			fwTable = "filter"
+		} else {
+			m.log.App("代理", fmt.Sprintf("未检测到防火墙表(fw4/filter)，跳过 TUN 防火墙放行。fw4: %s, filter: %s",
+				strings.TrimSpace(string(out)), strings.TrimSpace(string(out2))))
+			return
+		}
+	}
+	run("nft", "insert", "rule", "inet", fwTable, "input", "iifname", p.TunDevice, "counter", "accept", "comment", "nexa")
+	run("nft", "insert", "rule", "inet", fwTable, "forward", "oifname", p.TunDevice, "counter", "accept", "comment", "nexa")
+	run("nft", "insert", "rule", "inet", fwTable, "forward", "iifname", p.TunDevice, "counter", "accept", "comment", "nexa")
 }
 
-// Cleanup 对齐 proxy.init cleanup()：删 rule/route/dummy、删 nft 表、删 fw4 中 comment=nexa 的规则、恢复 bridge-nf。
+// Cleanup 对齐 proxy.init cleanup()：删 rule/route/dummy、删 nft 表、删防火墙中 comment=nexa 的规则、恢复 bridge-nf。
 func (m *Manager) Cleanup(cfg *config.Config) {
 	r := &cfg.Routing
 
@@ -176,40 +190,43 @@ func (m *Manager) Cleanup(cfg *config.Config) {
 	// 删 nft 表
 	runIgnore("nft", "delete", "table", "inet", "proxy")
 
-	// 删 fw4 中 comment=nexa 的规则（对齐原 comment=proxy）
-	deleteFw4RulesByComment("input")
-	deleteFw4RulesByComment("forward")
+	// 删防火墙表中 comment=nexa 的规则（兼容 OpenWrt fw4 和普通 Linux filter）
+	deleteFwRulesByComment("fw4", "input")
+	deleteFwRulesByComment("fw4", "forward")
+	deleteFwRulesByComment("filter", "input")
+	deleteFwRulesByComment("filter", "forward")
 
-	// 恢复 bridge-nf-call（仅当标志文件存在）
-	if _, err := os.Stat(paths.BridgeNfCallIptablesFlag); err == nil {
-		os.Remove(paths.BridgeNfCallIptablesFlag)
-		sysctlSet("net.bridge.bridge-nf-call-iptables", "1")
-	}
-	if _, err := os.Stat(paths.BridgeNfCallIp6tablesFlag); err == nil {
-		os.Remove(paths.BridgeNfCallIp6tablesFlag)
-		sysctlSet("net.bridge.bridge-nf-call-ip6tables", "1")
+	// 恢复 bridge-nf-call（仅当标志文件存在且系统有网桥时）
+	if hasBridge() {
+		if _, err := os.Stat(paths.BridgeNfCallIptablesFlag); err == nil {
+			os.Remove(paths.BridgeNfCallIptablesFlag)
+			sysctlSet("net.bridge.bridge-nf-call-iptables", "1")
+		}
+		if _, err := os.Stat(paths.BridgeNfCallIp6tablesFlag); err == nil {
+			os.Remove(paths.BridgeNfCallIp6tablesFlag)
+			sysctlSet("net.bridge.bridge-nf-call-ip6tables", "1")
+		}
 	}
 }
 
-// deleteFw4RulesByComment 删除 inet fw4 <chain> 中 comment=nexa 的规则。
-func deleteFw4RulesByComment(chain string) {
-	out, err := exec.Command("nft", "-j", "list", "table", "inet", "fw4").Output()
+// deleteFwRulesByComment 删除 inet <table> <chain> 中 comment=nexa 的规则。
+// 兼容 OpenWrt 的 fw4 表和普通 Linux 的 filter 表。
+func deleteFwRulesByComment(table, chain string) {
+	out, err := exec.Command("nft", "-j", "list", "table", "inet", table).Output()
 	if err != nil {
 		return
 	}
-	// 简化：用 nft 原生 delete by handle 需要 json 解析，这里用正则太脆弱。
-	// 直接遍历 rule 的 handle：nft 不支持按 comment 删除，必须先 list 拿 handle。
-	handles := extractHandlesForComment(out, chain, "nexa")
+	handles := extractHandlesForComment(out, table, chain, "nexa")
 	for _, h := range handles {
-		runIgnore("nft", "delete", "rule", "inet", "fw4", chain, "handle", fmt.Sprint(h))
+		runIgnore("nft", "delete", "rule", "inet", table, chain, "handle", fmt.Sprint(h))
 	}
 }
 
 // extractHandlesForComment 从 nft -j 输出里提取指定 chain 中 comment 匹配的 rule handle。
-func extractHandlesForComment(jsonOut []byte, chain, comment string) []uint64 {
+func extractHandlesForComment(jsonOut []byte, table, chain, comment string) []uint64 {
 	// 极简解析：逐行扫描 json 太复杂，退而用 nft 非 json + 文本匹配会更稳。
 	// 这里用文本模式重新查询以保证可靠。
-	out, err := exec.Command("nft", "list", "table", "inet", "fw4").Output()
+	out, err := exec.Command("nft", "list", "table", "inet", table).Output()
 	if err != nil {
 		return nil
 	}
@@ -323,6 +340,21 @@ func resolveLanDevices(interfaces []string) []string {
 func dirExists(p string) bool {
 	st, err := os.Stat(p)
 	return err == nil && st.IsDir()
+}
+
+// hasBridge 检测系统是否存在网桥接口（如 br-lan、br0 等）。
+func hasBridge() bool {
+	entries, err := os.ReadDir("/sys/class/net")
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		// 网桥接口在 /sys/class/net/<name>/bridge 目录存在
+		if dirExists("/sys/class/net/" + e.Name() + "/bridge") {
+			return true
+		}
+	}
+	return false
 }
 
 func run(name string, args ...string) {
