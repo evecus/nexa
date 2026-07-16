@@ -205,7 +205,8 @@ function renderLogin() {
 }
 
 // ── 工具：动态标签输入 ─────────────
-function dynList(values, onadd) {
+// options: 可选下拉列表（字符串数组），传入时会渲染一个 select 供用户从系统已检测到的候选项中挑选。
+function dynList(values, options) {
   const wrap = UI.el('div', { class: 'dyn-list' });
   const render = (vals) => {
     wrap.innerHTML = '';
@@ -214,10 +215,33 @@ function dynList(values, onadd) {
         UI.el('span', { class: 'x', onclick: () => { vals.splice(i, 1); render(vals); } }, '×'));
       wrap.appendChild(chip);
     });
+    // 下拉候选项：已选中的不再出现在下拉中
+    if (options && options.length) {
+      const sel = UI.el('select', { class: 'chip-select' });
+      sel.appendChild(UI.el('option', { value: '' }, '+ 从列表选择'));
+      let avail = 0;
+      options.forEach(opt => {
+        if (!vals.includes(opt)) {
+          sel.appendChild(UI.el('option', { value: opt }, opt));
+          avail++;
+        }
+      });
+      if (avail > 0) {
+        sel.addEventListener('change', () => {
+          if (sel.value) {
+            vals.push(sel.value);
+            render(vals);
+          }
+        });
+        wrap.appendChild(sel);
+      }
+    }
     const addBtn = UI.el('button', { class: 'chip-add', onclick: () => {
       const v = prompt('输入值（逗号分隔多个）');
       if (!v) return;
-      v.split(',').map(s => s.trim()).filter(Boolean).forEach(x => vals.push(x));
+      v.split(',').map(s => s.trim()).filter(Boolean).forEach(x => {
+        if (!vals.includes(x)) vals.push(x);
+      });
       render(vals);
     } }, '+ 添加');
     wrap.appendChild(addBtn);
@@ -372,10 +396,16 @@ route('#/profile', async (c) => {
 
 // ── 页面：代理配置 (proxy.js) ───────
 route('#/proxy', async (c) => {
-  const [cfg, ids] = await Promise.all([API.get('/api/config'), API.get('/api/identifiers')]);
+  // 并行加载：配置、本机标识符（用户/组/cgroup）、局域网主机（IP/IP6/MAC）
+  const [cfg, ids, hostInfo] = await Promise.all([
+    API.get('/api/config'),
+    API.get('/api/identifiers'),
+    API.get('/api/hosts').catch(() => ({ ip: [], ip6: [], mac: [], list: [] })),
+  ]);
   const p = JSON.parse(JSON.stringify(cfg.proxy));
   const local = { proxy: p, router: cfg.router_access_controls || [], lan: cfg.lan_access_controls || [], routing: cfg.routing, log: cfg.log };
   const users = ids.users || [], groups = ids.groups || [], cgroups = ids.cgroups || [];
+  const hostIPs = hostInfo.ip || [], hostIP6s = hostInfo.ip6 || [], hostMACs = hostInfo.mac || [];
   const osType = ids.os_type || 'linux';
   const cgroupHint = osType === 'openwrt' ? '例：services/dnsmasq' : '例：system.slice/sshd.service';
 
@@ -465,15 +495,15 @@ route('#/proxy', async (c) => {
     ));
     if (type === 'router') {
       card.appendChild(UI.el('div', { class: 'row-fields' },
-        UI.el('div', {}, UI.el('label', {}, '用户'), dynList(ac.user)),
-        UI.el('div', {}, UI.el('label', {}, '用户组'), dynList(ac.group)),
-        UI.el('div', {}, UI.el('label', {}, 'CGroup'), dynList(ac.cgroup), UI.el('div', { class: 'hint' }, cgroupHint))
+        UI.el('div', {}, UI.el('label', {}, '用户'), dynList(ac.user, users)),
+        UI.el('div', {}, UI.el('label', {}, '用户组'), dynList(ac.group, groups)),
+        UI.el('div', {}, UI.el('label', {}, 'CGroup'), dynList(ac.cgroup, cgroups), UI.el('div', { class: 'hint' }, cgroupHint))
       ));
     } else {
       card.appendChild(UI.el('div', { class: 'row-fields' },
-        UI.el('div', {}, UI.el('label', {}, 'IP'), dynList(ac.ip || (ac.ip = []))),
-        UI.el('div', {}, UI.el('label', {}, 'IPv6'), dynList(ac.ip6 || (ac.ip6 = []))),
-        UI.el('div', {}, UI.el('label', {}, 'MAC'), dynList(ac.mac || (ac.mac = [])))
+        UI.el('div', {}, UI.el('label', {}, 'IP'), dynList(ac.ip || (ac.ip = []), hostIPs)),
+        UI.el('div', {}, UI.el('label', {}, 'IPv6'), dynList(ac.ip6 || (ac.ip6 = []), hostIP6s)),
+        UI.el('div', {}, UI.el('label', {}, 'MAC'), dynList(ac.mac || (ac.mac = []), hostMACs))
       ));
     }
     return card;
