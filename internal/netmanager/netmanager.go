@@ -130,7 +130,7 @@ func (m *Manager) Apply(cfg *config.Config) error {
 		return err
 	}
 	// 校验表是否存在
-	if out, _ := exec.Command("nft", "list", "tables").Output(); strings.Contains(string(out), "inet proxy") {
+	if out, _ := exec.Command("nft", "list", "tables").Output(); strings.Contains(string(out), "inet nexa") {
 		m.log.App("代理", "流量劫持成功。")
 	} else {
 		m.log.App("代理", "流量劫持失败。")
@@ -188,7 +188,7 @@ func (m *Manager) Cleanup(cfg *config.Config) {
 	runIgnore("ip", "link", "del", r.DummyDevice)
 
 	// 删 nft 表
-	runIgnore("nft", "delete", "table", "inet", "proxy")
+	runIgnore("nft", "delete", "table", "inet", "nexa")
 
 	// 删防火墙表中 comment=nexa 的规则（兼容 OpenWrt fw4 和普通 Linux filter）
 	deleteFwRulesByComment("fw4", "input")
