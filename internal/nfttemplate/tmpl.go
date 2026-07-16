@@ -309,11 +309,17 @@ var tmplText = "{{- /* nft 模板，规则文本 1:1 对齐原 hijack.ut。 */ -
 	"\t{{ if .RouterProxy }}\n" +
 	"\tchain nat_output {\n" +
 	"\t\ttype nat hook output priority filter; policy accept;\n" +
-	"\t\t{{ if eq .CgroupsVersion 1 -}}\n" +
+	"\t\t{{ if .BypassCgroup }}{{ if eq .CgroupsVersion 1 -}}\n" +
 	"\t\tmeta cgroup {{ .CgroupID }} counter return\n" +
 	"\t\t{{ else if eq .CgroupsVersion 2 -}}\n" +
 	"\t\tsocket cgroupv2 level 2 \"services/{{ .CgroupName }}\" counter return\n" +
+	"\t\t{{ end }}{{ end }}\n" +
+	"\t\t{{ if and .BypassGid (ne .CoreGID \"\") -}}\n" +
+	"\t\tmeta skgid {{ .CoreGID }} counter return\n" +
 	"\t\t{{ end }}\n" +
+	"\t\t{{ if and .BypassMark (lenGt0 .BypassMarkValues) }}{{ range .BypassMarkValues -}}\n" +
+	"\t\tmeta mark {{ . }} counter return\n" +
+	"\t\t{{ end }}{{ end }}\n" +
 	"\t\tjump router_dns_hijack\n" +
 	"\t\t{{ if eq .TcpMode \"redirect\" -}}\n" +
 	"\t\tfib daddr type { local, broadcast, anycast, multicast } counter return\n" +
@@ -343,11 +349,17 @@ var tmplText = "{{- /* nft 模板，规则文本 1:1 对齐原 hijack.ut。 */ -
 	"\n" +
 	"\tchain mangle_output {\n" +
 	"\t\ttype route hook output priority mangle; policy accept;\n" +
-	"\t\t{{ if eq .CgroupsVersion 1 -}}\n" +
+	"\t\t{{ if .BypassCgroup }}{{ if eq .CgroupsVersion 1 -}}\n" +
 	"\t\tmeta cgroup {{ .CgroupID }} counter return\n" +
 	"\t\t{{ else if eq .CgroupsVersion 2 -}}\n" +
 	"\t\tsocket cgroupv2 level 2 \"services/{{ .CgroupName }}\" counter return\n" +
+	"\t\t{{ end }}{{ end }}\n" +
+	"\t\t{{ if and .BypassGid (ne .CoreGID \"\") -}}\n" +
+	"\t\tmeta skgid {{ .CoreGID }} counter return\n" +
 	"\t\t{{ end }}\n" +
+	"\t\t{{ if and .BypassMark (lenGt0 .BypassMarkValues) }}{{ range .BypassMarkValues -}}\n" +
+	"\t\tmeta mark {{ . }} counter return\n" +
+	"\t\t{{ end }}{{ end }}\n" +
 	"\t\tfib daddr type { local, broadcast, anycast, multicast } counter return\n" +
 	"\t\tct direction reply counter return\n" +
 	"\t\tip daddr @reserved_ip {{ if .FakeIPRange }} ip daddr != {{ .FakeIPRange }} {{ end }} counter return\n" +

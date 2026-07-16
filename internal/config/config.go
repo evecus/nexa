@@ -63,6 +63,10 @@ type ProxySection struct {
 	ProxyUdpDport        string   `json:"proxy_udp_dport"`
 	BypassDscp           []string `json:"bypass_dscp"`
 	BypassFwmark         []string `json:"bypass_fwmark"`
+	BypassCgroup         bool     `json:"bypass_cgroup"`
+	BypassGid            bool     `json:"bypass_gid"`
+	BypassMark           bool     `json:"bypass_mark"`
+	BypassMarkValues     []string `json:"bypass_mark_values"`
 	TunTimeout           int      `json:"tun_timeout"`
 	TunInterval          int      `json:"tun_interval"`
 }
@@ -160,6 +164,10 @@ func Default() *Config {
 			ProxyTcpDport:           "0-65535",
 			ProxyUdpDport:           "0-65535",
 			BypassDscp:              []string{"4"},
+			BypassCgroup:           true,
+			BypassGid:              false,
+			BypassMark:             false,
+			BypassMarkValues:       []string{},
 			TunTimeout:              30,
 			TunInterval:             1,
 		},

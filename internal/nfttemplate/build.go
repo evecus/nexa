@@ -5,6 +5,7 @@ package nfttemplate
 import (
 	"bytes"
 	"fmt"
+	"os/user"
 	"strconv"
 	"strings"
 	"text/template"
@@ -43,6 +44,12 @@ type Model struct {
 	CgroupsVersion int // 1 或 2
 	CgroupID       string
 	CgroupName     string
+	CoreGID        string // 核心进程的 GID，用于 BypassGid
+
+	BypassCgroup       bool
+	BypassGid          bool
+	BypassMark         bool
+	BypassMarkValues   []string
 
 	TproxyFwMark   string
 	TproxyFwMask   string
@@ -149,6 +156,11 @@ func Build(cfg *config.Config, lanInboundDevice []string, cgroupsVersion int) *M
 		CgroupsVersion:         cgroupsVersion,
 		CgroupID:               cfg.Routing.CgroupID,
 		CgroupName:             cfg.Routing.CgroupName,
+		CoreGID:                lookupCoreGID(),
+		BypassCgroup:           p.BypassCgroup,
+		BypassGid:              p.BypassGid,
+		BypassMark:             p.BypassMark,
+		BypassMarkValues:       p.BypassMarkValues,
 		TproxyFwMark:           cfg.Routing.TproxyFwMark,
 		TproxyFwMask:           cfg.Routing.TproxyFwMask,
 		TproxyFwUmask:          umask(cfg.Routing.TproxyFwMask),
@@ -162,6 +174,14 @@ func Build(cfg *config.Config, lanInboundDevice []string, cgroupsVersion int) *M
 		ProxyNFProtoHas4:         p.IPv4Proxy,
 		ProxyNFProtoHas6:         p.IPv6Proxy,
 	}
+}
+
+// lookupCoreGID 查找 nexa 组的 GID，找不到返回空字符串。
+func lookupCoreGID() string {
+	if g, err := user.LookupGroup("nexa"); err == nil {
+		return g.Gid
+	}
+	return ""
 }
 
 func buildRouterViews(cfg *config.Config) []AccessControlView {

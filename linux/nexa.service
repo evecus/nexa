@@ -1,0 +1,15 @@
+[Unit]
+Description=Nexa Proxy Manager
+After=network.target nftables.service
+Wants=nftables.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/nexa
+Restart=on-failure
+RestartSec=5
+LimitNPROC=no
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

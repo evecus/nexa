@@ -351,7 +351,7 @@ route('#/proxy', async (c) => {
 
   c.innerHTML = '';
   const card = UI.el('div', { class: 'card' });
-  const tabs = ['基本设置', '端口与设备', '本机代理', '局域网代理', '杂项'];
+  const tabs = ['基本设置', '端口与设备', '本机代理', '局域网代理', '绕过'];
   let active = 0;
   const tabWrap = UI.el('div', { class: 'tabs' });
   const body = UI.el('div', { class: 'mt-16' });
@@ -462,12 +462,23 @@ route('#/proxy', async (c) => {
       renderBody();
     } }, '+ 添加规则'));
   }
-  // 杂项
+  // 绕过
   function renderMisc(b) {
+    b.appendChild(UI.el('div', { class: 'section-title' }, '回环绕过'));
+    b.appendChild(UI.el('div', { class: 'toggle-row' }, UI.el('span', { class: 'label-txt' }, 'CGroup 绕过'), UI.toggle(p.bypass_cgroup, v => p.bypass_cgroup = v)));
+    b.appendChild(UI.el('div', { class: 'toggle-row' }, UI.el('span', { class: 'label-txt' }, 'GID 绕过'), UI.toggle(p.bypass_gid, v => p.bypass_gid = v)));
+    b.appendChild(UI.el('div', { class: 'toggle-row' }, UI.el('span', { class: 'label-txt' }, 'Mark 绕过'), UI.toggle(p.bypass_mark, v => p.bypass_mark = v)));
+    if (p.bypass_mark) {
+      b.appendChild(UI.el('div', { class: 'field' }, UI.el('label', {}, 'Mark 值（支持多个，如 0x1/0xff）'), dynList(p.bypass_mark_values || (p.bypass_mark_values = []))));
+    }
+    b.appendChild(UI.el('div', { class: 'section-title mt-20' }, '地址绕过'));
     b.appendChild(UI.el('div', { class: 'toggle-row' }, UI.el('span', { class: 'label-txt' }, '绕过中国大陆 IPv4'),
       UI.toggle(p.bypass_china_mainland_ip, v => p.bypass_china_mainland_ip = v)));
     b.appendChild(UI.el('div', { class: 'toggle-row' }, UI.el('span', { class: 'label-txt' }, '绕过中国大陆 IPv6'),
       UI.toggle(p.bypass_china_mainland_ip6, v => p.bypass_china_mainland_ip6 = v)));
+    b.appendChild(UI.el('div', { class: 'field' }, UI.el('label', {}, '保留 IPv4 地址段'), dynList(p.reserved_ip || (p.reserved_ip = []))));
+    b.appendChild(UI.el('div', { class: 'field' }, UI.el('label', {}, '保留 IPv6 地址段'), dynList(p.reserved_ip6 || (p.reserved_ip6 = []))));
+    b.appendChild(UI.el('div', { class: 'section-title mt-20' }, '端口与标记绕过'));
     const g = UI.el('div', { class: 'grid-2' });
     const tcp = UI.input('text', p.proxy_tcp_dport, '0-65535'); tcp.addEventListener('input', () => p.proxy_tcp_dport = tcp.value);
     const udp = UI.input('text', p.proxy_udp_dport, '0-65535'); udp.addEventListener('input', () => p.proxy_udp_dport = udp.value);
@@ -475,8 +486,7 @@ route('#/proxy', async (c) => {
     g.appendChild(UI.field('代理 UDP 目标端口范围', udp));
     b.appendChild(g);
     b.appendChild(UI.el('div', { class: 'field' }, UI.el('label', {}, '绕过 DSCP 标记'), dynList(p.bypass_dscp || (p.bypass_dscp = []))));
-    b.appendChild(UI.el('div', { class: 'field' }, UI.el('label', {}, '保留 IPv4 地址段'), dynList(p.reserved_ip || (p.reserved_ip = []))));
-    b.appendChild(UI.el('div', { class: 'field' }, UI.el('label', {}, '保留 IPv6 地址段'), dynList(p.reserved_ip6 || (p.reserved_ip6 = []))));
+    b.appendChild(UI.el('div', { class: 'field' }, UI.el('label', {}, '绕过 Fwmark 标记'), dynList(p.bypass_fwmark || (p.bypass_fwmark = []))));
   }
 
   renderTabs(); renderBody();

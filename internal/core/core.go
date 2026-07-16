@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -119,6 +120,21 @@ func (m *Manager) Start(cfg *config.Config) error {
 	cmd.Stdout = newLineWriter(m.log)
 	cmd.Stderr = newLineWriter(m.log)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+
+	// GID 绕过：核心以 root 运行，加入 nexa 附加组，nft 用 meta skgid 匹配绕过
+	if p.BypassGid {
+		gid, err := EnsureNexaGroup()
+		if err != nil {
+			m.log.App("核心", "警告：创建 nexa 组失败："+err.Error()+"，GID 绕过可能失效。")
+		} else {
+			cmd.SysProcAttr.Credential = &syscall.Credential{
+				Uid:    0, // root
+				Gid:    0, // root
+				Groups: []uint32{uint32(gid)},
+			}
+			m.log.App("核心", fmt.Sprintf("已将 nexa 附加组（GID %d）加入核心进程。", gid))
+		}
+	}
 
 	m.log.App("核心", "启动中。")
 	if err := cmd.Start(); err != nil {
@@ -363,6 +379,92 @@ func copyFile(src, dst string) error {
 	defer out.Close()
 	_, err = io.Copy(out, in)
 	return err
+}
+
+// EnsureNexaGroup 确保 nexa 系统组存在，返回其 GID。
+// 用于 GID 绕过：核心以 root 运行但加入 nexa 附加组，nft 用 meta skgid 匹配绕过。
+// 尝试顺序：groupadd → addgroup → 直接写 /etc/group（兼容无命令的 OpenWrt）。
+func EnsureNexaGroup() (int, error) {
+	// 先查找是否已存在
+	if g, err := user.LookupGroup("nexa"); err == nil {
+		gid, _ := strconv.Atoi(g.Gid)
+		return gid, nil
+	}
+
+	// 尝试 groupadd（标准 Linux）
+	if _, e := exec.LookPath("groupadd"); e == nil {
+		if err := exec.Command("groupadd", "-r", "nexa").Run(); err == nil {
+			return lookupNexaGID()
+		}
+	}
+	// 尝试 addgroup（BusyBox/OpenWrt）
+	if _, e := exec.LookPath("addgroup"); e == nil {
+		if err := exec.Command("addgroup", "-S", "nexa").Run(); err == nil {
+			return lookupNexaGID()
+		}
+	}
+	// 回退：直接写 /etc/group（兼容无 groupadd/addgroup 的 OpenWrt）
+	if gid, err := appendGroupToFile("nexa"); err == nil {
+		return gid, nil
+	}
+
+	return 0, fmt.Errorf("无法创建 nexa 组（groupadd/addgroup/写文件均失败）")
+}
+
+// lookupNexaGID 查找 nexa 组的 GID。
+func lookupNexaGID() (int, error) {
+	g, err := user.LookupGroup("nexa")
+	if err != nil {
+		return 0, fmt.Errorf("创建 nexa 组后查找失败: %w", err)
+	}
+	gid, _ := strconv.Atoi(g.Gid)
+	return gid, nil
+}
+
+// appendGroupToFile 直接向 /etc/group 追加 nexa 组条目。
+// /etc/group 格式：组名:密码:GID:用户列表
+// 选一个不冲突的 GID（从 65534 往下找）。
+func appendGroupToFile(name string) (int, error) {
+	data, err := os.ReadFile("/etc/group")
+	if err != nil {
+		return 0, fmt.Errorf("读取 /etc/group 失败: %w", err)
+	}
+
+	// 收集已占用的 GID
+	used := map[int]bool{}
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Split(line, ":")
+		if len(fields) >= 3 {
+			if gid, err := strconv.Atoi(fields[2]); err == nil {
+				used[gid] = true
+			}
+		}
+	}
+
+	// 从 65534 往下找一个空闲 GID
+	gid := 0
+	for i := 65534; i >= 100; i-- {
+		if !used[i] {
+			gid = i
+			break
+		}
+	}
+	if gid == 0 {
+		return 0, fmt.Errorf("找不到可用的 GID")
+	}
+
+	// 追加条目
+	entry := fmt.Sprintf("\n%s:x:%d:\n", name, gid)
+	f, err := os.OpenFile("/etc/group", os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return 0, fmt.Errorf("写入 /etc/group 失败: %w", err)
+	}
+	defer f.Close()
+	if _, err := f.WriteString(entry); err != nil {
+		return 0, fmt.Errorf("写入 /etc/group 失败: %w", err)
+	}
+
+	return gid, nil
 }
 
 // splitArgs 简单按空格拆分启动参数（够用，复杂场景可后续换 shellwords）。

@@ -74,6 +74,7 @@ textarea { font-family: "SF Mono", "Consolas", monospace; font-size: 13px; resiz
 .toggle input:checked + .slider::before { transform: translateX(18px); }
 .toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; }
 .toggle-row .label-txt { font-weight: 500; }
+.section-title { font-weight: 600; font-size: 14px; color: var(--text); border-bottom: 1px solid var(--border); padding-bottom: 8px; }
 
 /* 按钮 */
 .btn {
