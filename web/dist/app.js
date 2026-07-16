@@ -244,17 +244,29 @@ route('#/app', async (c) => {
 
   // 保存按钮
   const saveBar = UI.el('div', { class: 'flex-between' });
-  saveBar.appendChild(UI.el('div', { class: 'muted' }, '保存后将自动应用配置'));
+  saveBar.appendChild(UI.el('div', { class: 'muted' }, '保存后配置写入文件，保存并应用会刷新页面'));
+  const actions = UI.el('div', { class: 'right-actions' });
+  const saveOnlyBtn = UI.el('button', { class: 'btn btn-outline' }, '保存');
+  saveOnlyBtn.addEventListener('click', async () => {
+    saveOnlyBtn.disabled = true; saveOnlyBtn.textContent = '保存中...';
+    try {
+      await API.put('/api/config', local);
+      UI.toast('已保存', 'ok');
+    } catch (e) { UI.toast('保存失败：' + e.message, 'err'); }
+    saveOnlyBtn.disabled = false; saveOnlyBtn.textContent = '保存';
+  });
   const saveBtn = UI.el('button', { class: 'btn btn-primary' }, '保存并应用');
   saveBtn.addEventListener('click', async () => {
     saveBtn.disabled = true; saveBtn.textContent = '应用中...';
     try {
       await API.post('/api/config/apply', local);
-      UI.toast('已保存并应用', 'ok');
-    } catch (e) { UI.toast('保存失败：' + e.message, 'err'); }
-    saveBtn.disabled = false; saveBtn.textContent = '保存并应用';
+      UI.toast('已保存并应用，正在刷新...', 'ok');
+      setTimeout(() => location.reload(), 600);
+    } catch (e) { UI.toast('保存失败：' + e.message, 'err'); saveBtn.disabled = false; saveBtn.textContent = '保存并应用'; }
   });
-  saveBar.appendChild(saveBtn);
+  actions.appendChild(saveOnlyBtn);
+  actions.appendChild(saveBtn);
+  saveBar.appendChild(actions);
   c.appendChild(saveBar);
 
   // 更新状态
@@ -452,7 +464,23 @@ route('#/proxy', async (c) => {
 
   // 保存
   const saveBar = UI.el('div', { class: 'flex-between mt-20' });
-  saveBar.appendChild(UI.el('div', { class: 'muted' }, '保存后将自动应用配置'));
+  saveBar.appendChild(UI.el('div', { class: 'muted' }, '保存后配置写入文件，保存并应用会重新加载配置'));
+  const actions = UI.el('div', { class: 'right-actions' });
+  const saveOnlyBtn = UI.el('button', { class: 'btn btn-outline' }, '保存');
+  saveOnlyBtn.addEventListener('click', async () => {
+    saveOnlyBtn.disabled = true; saveOnlyBtn.textContent = '保存中...';
+    try {
+      const full = await API.get('/api/config');
+      full.proxy = local.proxy;
+      full.router_access_controls = local.router;
+      full.lan_access_controls = local.lan;
+      full.routing = local.routing;
+      full.log = local.log;
+      await API.put('/api/config', full);
+      UI.toast('已保存', 'ok');
+    } catch (e) { UI.toast('保存失败：' + e.message, 'err'); }
+    saveOnlyBtn.disabled = false; saveOnlyBtn.textContent = '保存';
+  });
   const saveBtn = UI.el('button', { class: 'btn btn-primary' }, '保存并应用');
   saveBtn.addEventListener('click', async () => {
     saveBtn.disabled = true; saveBtn.textContent = '应用中...';
@@ -465,10 +493,11 @@ route('#/proxy', async (c) => {
       full.log = local.log;
       await API.post('/api/config/apply', full);
       UI.toast('已保存并应用', 'ok');
-    } catch (e) { UI.toast('保存失败：' + e.message, 'err'); }
-    saveBtn.disabled = false; saveBtn.textContent = '保存并应用';
+    } catch (e) { UI.toast('保存失败：' + e.message, 'err'); saveBtn.disabled = false; saveBtn.textContent = '保存并应用'; }
   });
-  saveBar.appendChild(saveBtn);
+  actions.appendChild(saveOnlyBtn);
+  actions.appendChild(saveBtn);
+  saveBar.appendChild(actions);
   c.appendChild(saveBar);
 });
 
@@ -498,14 +527,18 @@ route('#/editor', async (c) => {
     await API.put('/api/profiles/' + encodeURIComponent(current), ta.value);
     UI.toast('已保存', 'ok');
   });
-  const restartBtn = UI.el('button', { class: 'btn btn-danger' }, '保存并重启');
-  restartBtn.addEventListener('click', async () => {
+  const applyBtn = UI.el('button', { class: 'btn btn-primary' }, '保存并应用');
+  applyBtn.addEventListener('click', async () => {
     if (!current) return;
-    await API.put('/api/profiles/' + encodeURIComponent(current), ta.value);
-    await API.post('/api/restart');
-    UI.toast('已保存并重启', 'ok');
+    applyBtn.disabled = true; applyBtn.textContent = '应用中...';
+    try {
+      await API.put('/api/profiles/' + encodeURIComponent(current), ta.value);
+      await API.post('/api/config/apply', await API.get('/api/config'));
+      UI.toast('已保存并应用', 'ok');
+    } catch (e) { UI.toast('保存失败：' + e.message, 'err'); }
+    applyBtn.disabled = false; applyBtn.textContent = '保存并应用';
   });
-  bar.appendChild(saveBtn); bar.appendChild(restartBtn);
+  bar.appendChild(saveBtn); bar.appendChild(applyBtn);
   card.appendChild(bar);
   c.appendChild(card);
 });
