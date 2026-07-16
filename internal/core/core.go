@@ -30,10 +30,18 @@ type Manager struct {
 	pid      int
 	running  bool
 	stopFlag bool
+	crashes  int // 连续快速退出计数
+
+	onGiveUp func() // 核心放弃重启时回调（用于清理网络规则等）
 }
 
 func New(log *logger.Logger) *Manager {
 	return &Manager{log: log}
+}
+
+// OnGiveUp 注册核心放弃重启时的回调。
+func (m *Manager) OnGiveUp(fn func()) {
+	m.onGiveUp = fn
 }
 
 // Running 是否运行中。
@@ -140,6 +148,7 @@ func (m *Manager) Start(cfg *config.Config) error {
 	}
 
 	// respawn 守护
+	m.crashes = 0
 	go m.watch(cfg)
 	return nil
 }
@@ -204,7 +213,10 @@ func cgroupsVersion() int {
 }
 
 // watch 对齐 procd respawn：进程退出后若非主动停止则重启。
+// 若核心连续快速退出（5 秒内）超过 3 次，视为启动失败，不再重试。
 func (m *Manager) watch(cfg *config.Config) {
+	const maxCrashes = 3
+	const crashWindow = 5 * time.Second
 	for {
 		m.mu.Lock()
 		cmd := m.cmd
@@ -212,7 +224,9 @@ func (m *Manager) watch(cfg *config.Config) {
 		if cmd == nil {
 			return
 		}
+		startTime := time.Now()
 		_ = cmd.Wait()
+		elapsed := time.Since(startTime)
 
 		m.mu.Lock()
 		m.running = false
@@ -221,11 +235,26 @@ func (m *Manager) watch(cfg *config.Config) {
 		if m.stopFlag {
 			m.cmd = nil
 			m.cancel = nil
+			m.crashes = 0
 			m.mu.Unlock()
 			return
 		}
+		// 核心在 5 秒内退出视为异常崩溃
+		if elapsed < crashWindow {
+			m.crashes++
+		} else {
+			m.crashes = 0
+		}
+		crashes := m.crashes
 		m.mu.Unlock()
 
+		if crashes >= maxCrashes {
+			m.log.App("核心", fmt.Sprintf("连续 %d 次启动后快速退出，停止重试。请检查配置或权限。", maxCrashes))
+			if m.onGiveUp != nil {
+				m.onGiveUp()
+			}
+			return
+		}
 		m.log.App("核心", "进程退出，1 秒后重启。")
 		time.Sleep(time.Second)
 		// 重启
