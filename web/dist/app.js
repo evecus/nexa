@@ -250,6 +250,124 @@ function dynList(values, options) {
   return wrap;
 }
 
+// ── 工具：代码编辑器（语法高亮 + 行号 + Tab 缩进） ─────
+// lang: 'json' | 'yaml' | 'text'
+function detectLang(name) {
+  const lower = (name || '').toLowerCase();
+  if (lower.endsWith('.json')) return 'json';
+  if (lower.endsWith('.yaml') || lower.endsWith('.yml')) return 'yaml';
+  // 无扩展名时尝试根据首字符检测
+  return '';
+}
+function escapeHTML(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function highlight(code, lang) {
+  const esc = escapeHTML(code);
+  if (lang === 'json') return hlJSON(esc);
+  if (lang === 'yaml') return hlYAML(esc);
+  return esc;
+}
+// JSON 高亮：键名/字符串/数字/布尔/null
+function hlJSON(s) {
+  return s.replace(
+    /"(?:\\.|[^"\\])*"(\s*:)?|(-?\b\d+\.?\d*(?:[eE][+-]?\d+)?\b)|\b(true|false|null)\b/g,
+    (m, colon, num, kw) => {
+      if (m[0] === '"') {
+        if (colon) return '<span class="tok-key">' + m.replace(/\s*:$/, '') + '</span>' + colon;
+        return '<span class="tok-str">' + m + '</span>';
+      }
+      if (num) return '<span class="tok-num">' + num + '</span>';
+      if (kw) return '<span class="tok-kw">' + kw + '</span>';
+      return m;
+    }
+  );
+}
+// YAML 高亮：注释/键名/字符串值/数字/布尔
+function hlYAML(s) {
+  return s.split('\n').map(line => {
+    // 整行注释
+    if (/^\s*#/.test(line)) return '<span class="tok-com">' + line + '</span>';
+    // 匹配 "缩进 [- ] key: rest"
+    const m = line.match(/^(\s*-?\s*)([^:\s#\n][^:\n]*?)(\s*:)(\s*)(.*)$/);
+    if (m) {
+      const indent = m[1], key = m[2], colon = m[3], sp = m[4], val = m[5];
+      let valHTML;
+      // 值中的注释
+      const cmt = val.match(/\s#.*$/);
+      let valMain = val, cmtHTML = '';
+      if (cmt && val.indexOf('"') < 0) {
+        valMain = val.slice(0, cmt.index);
+        cmtHTML = '<span class="tok-com">' + cmt[0] + '</span>';
+      }
+      const trimmed = valMain.trim();
+      if (/^-?\d+\.?\d*$/.test(trimmed)) {
+        valHTML = '<span class="tok-num">' + valMain + '</span>';
+      } else if (/^(true|false|null|yes|no|~)$/i.test(trimmed)) {
+        valHTML = '<span class="tok-kw">' + valMain + '</span>';
+      } else if (trimmed === '' || (trimmed[0] === '"' && trimmed[trimmed.length - 1] === '"') || (trimmed[0] === "'" && trimmed[trimmed.length - 1] === "'")) {
+        valHTML = '<span class="tok-str">' + valMain + '</span>';
+      } else {
+        valHTML = '<span class="tok-str">' + valMain + '</span>';
+      }
+      return indent + '<span class="tok-key">' + key + '</span>' + colon + sp + valHTML + cmtHTML;
+    }
+    // 列表项 "- value"
+    const lm = line.match(/^(\s*)(-)(\s+)(.*)$/);
+    if (lm) {
+      return lm[1] + '<span class="tok-kw">' + lm[2] + '</span>' + lm[3] + '<span class="tok-str">' + lm[4] + '</span>';
+    }
+    return line;
+  }).join('\n');
+}
+function codeEditor(initialLang) {
+  let lang = initialLang || 'text';
+  const wrap = UI.el('div', { class: 'code-editor' });
+  const gutter = UI.el('div', { class: 'code-gutter' });
+  const area = UI.el('div', { class: 'code-area' });
+  const pre = UI.el('pre', { class: 'code-highlight', 'aria-hidden': 'true' });
+  const codeEl = UI.el('code', {});
+  pre.appendChild(codeEl);
+  const ta = UI.el('textarea', { class: 'code-input', spellcheck: 'false', wrap: 'off' });
+  area.appendChild(pre);
+  area.appendChild(ta);
+  wrap.appendChild(gutter);
+  wrap.appendChild(area);
+
+  const update = () => {
+    const v = ta.value || '';
+    codeEl.innerHTML = highlight(v, lang) + '\n';
+    const lines = v.split('\n').length;
+    let gh = '';
+    for (let i = 1; i <= lines; i++) gh += i + '\n';
+    gutter.textContent = gh;
+  };
+  ta.addEventListener('input', update);
+  ta.addEventListener('scroll', () => {
+    pre.scrollTop = ta.scrollTop;
+    pre.scrollLeft = ta.scrollLeft;
+    // gutter overflow:hidden 无法用 scrollTop，用 transform 同步
+    gutter.style.transform = 'translateY(' + (-ta.scrollTop) + 'px)';
+  });
+  // Tab 缩进（2 空格）
+  ta.addEventListener('keydown', (e) => {
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const s = ta.selectionStart, ed = ta.selectionEnd;
+      ta.value = ta.value.slice(0, s) + '  ' + ta.value.slice(ed);
+      ta.selectionStart = ta.selectionEnd = s + 2;
+      update();
+    }
+  });
+
+  return {
+    el: wrap,
+    get: () => ta.value,
+    set: (v) => { ta.value = v; update(); },
+    setLang: (l) => { lang = l; update(); },
+  };
+}
+
 // ── 页面：插件配置 (app.js) ─────────
 route('#/app', async (c) => {
   const [cfg, profiles, ver] = await Promise.all([API.get('/api/config'), API.get('/api/profiles'), API.get('/api/version')]);
@@ -599,21 +717,36 @@ route('#/editor', async (c) => {
   const sel = UI.el('select', {});
   sel.appendChild(UI.el('option', { value: '' }, '-- 选择文件 --'));
   profiles.forEach(p => sel.appendChild(UI.el('option', { value: p.name }, p.name)));
-  const ta = UI.el('textarea', { rows: '25', wrap: 'off', placeholder: '选择文件后加载内容...' });
+  // 语言选择
+  const langSel = UI.el('select', {});
+  [['text', '纯文本'], ['json', 'JSON'], ['yaml', 'YAML']].forEach(([v, l]) => langSel.appendChild(UI.el('option', { value: v }, l)));
+  const ed = codeEditor('text');
   let current = '';
   sel.addEventListener('change', async () => {
-    current = sel.value; if (!current) { ta.value = ''; return; }
-    ta.value = '加载中...';
+    current = sel.value; if (!current) { ed.set(''); return; }
+    ed.set('加载中...');
     const r = await API.raw('/api/profiles/' + encodeURIComponent(current), { headers: { Authorization: 'Bearer ' + localStorage.getItem('nexa_token') } });
-    ta.value = await r.text();
+    const text = await r.text();
+    // 根据扩展名自动选择语言
+    let lang = detectLang(current);
+    if (!lang) {
+      const t = text.trim();
+      if (t[0] === '{' || t[0] === '[') lang = 'json';
+      else lang = 'yaml';
+    }
+    ed.setLang(lang);
+    langSel.value = lang;
+    ed.set(text);
   });
-  card.appendChild(UI.field('选择文件', sel));
-  card.appendChild(ta);
+  langSel.addEventListener('change', () => ed.setLang(langSel.value));
+  card.appendChild(UI.el('div', { class: 'grid-2' },
+    UI.field('选择文件', sel), UI.field('语法高亮', langSel)));
+  card.appendChild(ed.el);
   const bar = UI.el('div', { class: 'row-gap mt-16' });
   const saveBtn = UI.el('button', { class: 'btn btn-primary' }, '保存');
   saveBtn.addEventListener('click', async () => {
     if (!current) { UI.toast('请先选择文件', 'err'); return; }
-    await API.put('/api/profiles/' + encodeURIComponent(current), ta.value);
+    await API.put('/api/profiles/' + encodeURIComponent(current), ed.get());
     UI.toast('已保存', 'ok');
   });
   const applyBtn = UI.el('button', { class: 'btn btn-primary' }, '保存并应用');
@@ -621,7 +754,7 @@ route('#/editor', async (c) => {
     if (!current) return;
     applyBtn.disabled = true; applyBtn.textContent = '应用中...';
     try {
-      await API.put('/api/profiles/' + encodeURIComponent(current), ta.value);
+      await API.put('/api/profiles/' + encodeURIComponent(current), ed.get());
       await API.post('/api/config/apply', await API.get('/api/config'));
       UI.toast('已保存并应用，正在刷新...', 'ok');
       setTimeout(() => location.reload(), 600);
