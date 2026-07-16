@@ -211,7 +211,16 @@ route('#/app', async (c) => {
     UI.field('运行状态', UI.el('div', { id: 'app-status-box' })),
     UI.field('操作', UI.el('div', { class: 'row-gap' },
       UI.el('button', { class: 'btn btn-outline btn-sm', onclick: async () => { await API.post('/api/restart-core'); UI.toast('已重启核心', 'ok'); } }, '重启核心'),
-      UI.el('button', { class: 'btn btn-danger btn-sm', onclick: async () => { await API.post('/api/restart'); UI.toast('已重启', 'ok'); } }, '重启服务')
+      UI.el('button', { class: 'btn btn-danger btn-sm', onclick: async () => { await API.post('/api/restart'); UI.toast('已重启', 'ok'); } }, '重启服务'),
+      UI.el('button', { class: 'btn btn-success btn-sm', onclick: async () => {
+        try {
+          const full = await API.get('/api/config');
+          const port = full.proxy.ui_port || '9090';
+          const path = (full.proxy.ui_path || 'ui').replace(/^\/+|\/+$/g, '');
+          const host = location.hostname;
+          window.open('http://' + host + ':' + port + '/' + path, '_blank');
+        } catch (e) { UI.toast('获取配置失败', 'err'); }
+      } }, '打开UI面板')
     ))
   );
   statusCard.appendChild(sRow);
@@ -386,6 +395,8 @@ route('#/proxy', async (c) => {
     g.appendChild(mk('Redirect 端口', 'redir_port', '例：7892'));
     g.appendChild(mk('TPROXY 端口', 'tproxy_port', '例：7893'));
     g.appendChild(mk('TUN 设备名', 'tun_device', '例：tun0'));
+    g.appendChild(mk('UI 端口', 'ui_port', '例：9090'));
+    g.appendChild(mk('UI 路径', 'ui_path', '例：ui'));
     g.appendChild(mk('Fake-IP IPv4 地址段', 'fake_ip_range', '例：198.18.0.0/15'));
     g.appendChild(mk('Fake-IP IPv6 地址段', 'fake_ip6_range', '例：fc00::/18'));
     b.appendChild(g);
