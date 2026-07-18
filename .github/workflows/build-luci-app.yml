@@ -8,9 +8,6 @@ on:
         required: false
         default: ''
         type: string
-  push:
-    tags:
-      - 'v*'
 
 permissions:
   contents: write
@@ -35,11 +32,6 @@ jobs:
             goarch: amd64
             goextra: ''
             real_arch: x86_64
-          - name: mipsel
-            goos: linux
-            goarch: mipsle
-            goextra: softfloat
-            real_arch: mipsel_24kc
 
     steps:
       - name: Checkout
