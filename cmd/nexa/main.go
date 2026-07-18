@@ -58,7 +58,7 @@ func main() {
 		}
 	}()
 
-	log.Printf("nexa 监听 %s（默认账户 admin/admin，请尽快修改）", *addr)
+	log.Printf("nexa listen 0.0.0.0:%s", *addr)
 
 	// 信号处理：优雅关闭，清理网络规则并杀掉核心进程
 	sigCh := make(chan os.Signal, 1)
