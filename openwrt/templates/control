@@ -1,0 +1,8 @@
+Package: luci-app-nexa
+Version: {{VERSION}}
+Depends: libc, luci-base
+License: GPL-2.0-only
+Section: luci
+Architecture: {{ARCH}}
+Installed-Size: {{INSTALLED_SIZE}}
+Description: LuCI interface for Nexa proxy daemon

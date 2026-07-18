@@ -1,0 +1,28 @@
+{
+    "admin/services/nexa": {
+        "title": "Nexa",
+        "action": {
+            "type": "firstchild"
+        },
+        "depends": {
+            "acl": [ "luci-app-nexa" ],
+            "uci": { "nexa": true }
+        }
+    },
+    "admin/services/nexa/main": {
+        "title": "基本配置",
+        "order": 10,
+        "action": {
+            "type": "view",
+            "path": "nexa/main"
+        }
+    },
+    "admin/services/nexa/log": {
+        "title": "运行日志",
+        "order": 20,
+        "action": {
+            "type": "view",
+            "path": "nexa/log"
+        }
+    }
+}
