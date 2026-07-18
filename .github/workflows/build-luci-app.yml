@@ -1,0 +1,103 @@
+name: Build luci-app-nexa
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号 (如 1.0.0-r1)，留空则自动生成'
+        required: false
+        default: ''
+        type: string
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - name: aarch64
+            goos: linux
+            goarch: arm64
+            goextra: ''
+            opkg_arch: aarch64_generic
+          - name: x86_64
+            goos: linux
+            goarch: amd64
+            goextra: ''
+            opkg_arch: x86_64
+          - name: mipsel
+            goos: linux
+            goarch: mipsle
+            goextra: softfloat
+            opkg_arch: mipsel_24kc
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Resolve version
+        id: ver
+        run: |
+          VERSION="${{ inputs.version }}"
+          if [ -z "$VERSION" ]; then
+            if [ "${{ github.ref_type }}" = "tag" ]; then
+              VERSION="${GITHUB_REF_NAME#v}"
+            else
+              VERSION="0.0.0-$(date +%Y%m%d%H%M)"
+            fi
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Build binary (${{ matrix.name }})
+        run: |
+          chmod +x openwrt/scripts/build_binary.sh
+          openwrt/scripts/build_binary.sh \
+            "${{ matrix.goos }}" "${{ matrix.goarch }}" "${{ matrix.goextra }}" \
+            "${{ steps.ver.outputs.version }}" \
+            "dist/nexa-${{ matrix.name }}"
+
+      - name: Build IPK (${{ matrix.name }})
+        run: |
+          chmod +x openwrt/scripts/build_ipk.sh
+          openwrt/scripts/build_ipk.sh \
+            "dist/nexa-${{ matrix.name }}" \
+            "${{ matrix.opkg_arch }}" \
+            "${{ steps.ver.outputs.version }}" \
+            "release"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: luci-app-nexa-${{ matrix.name }}
+          path: release/*.ipk
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: "Build ${{ github.run_number }}"
+          generate_release_notes: false
+          files: artifacts/*.ipk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
