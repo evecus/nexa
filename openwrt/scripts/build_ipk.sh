@@ -95,8 +95,10 @@ tar czf "${BUILD_DIR}/control.tar.gz" ./ --owner=0 --group=0
 
 echo "2.0" > "${BUILD_DIR}/debian-binary"
 
-# 文件名带真实架构标识，方便手动核对，避免装错设备
-IPK_NAME="luci-app-nexa_${VERSION}_${REAL_ARCH}.ipk"
+# 文件名格式: luci-app-nexa_版本_all_真实架构.ipk
+# "all" 对应 control 里的 Architecture 字段（opkg 不做架构校验），
+# 真实架构标识附在后面，方便手动核对，避免装错设备。
+IPK_NAME="luci-app-nexa_${VERSION}_all_${REAL_ARCH}.ipk"
 cd "${BUILD_DIR}"
 tar czf "${OUT_DIR}/${IPK_NAME}" \
     ./debian-binary ./control.tar.gz ./data.tar.gz
