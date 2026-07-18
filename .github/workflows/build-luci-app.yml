@@ -21,16 +21,26 @@ jobs:
     strategy:
       matrix:
         include:
+          # real_arch 仅用于 IPK 文件名和 control 的 Description 标注（手动核对用），
+          # 不写入 Architecture 字段（固定为 all）。
+          # 注意：这意味着 opkg 不会做架构校验，装错架构不会在安装阶段报错，
+          # 只会在服务启动时失败。安装前请务必核对文件名里的架构与设备一致。
           - name: aarch64
             goos: linux
             goarch: arm64
             goextra: ''
-            opkg_arch: aarch64_generic
+            real_arch: aarch64_cortex-a53
           - name: x86_64
             goos: linux
             goarch: amd64
             goextra: ''
-            opkg_arch: x86_64
+            real_arch: x86_64
+          - name: mipsel
+            goos: linux
+            goarch: mipsle
+            goextra: softfloat
+            real_arch: mipsel_24kc
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -66,7 +76,7 @@ jobs:
           chmod +x openwrt/scripts/build_ipk.sh
           openwrt/scripts/build_ipk.sh \
             "dist/nexa-${{ matrix.name }}" \
-            "${{ matrix.opkg_arch }}" \
+            "${{ matrix.real_arch }}" \
             "${{ steps.ver.outputs.version }}" \
             "release"
 
