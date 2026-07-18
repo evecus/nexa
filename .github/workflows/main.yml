@@ -48,15 +48,8 @@ jobs:
 
       - name: package
         run: |
-          mkdir -p pkg/nexa/etc/init.d pkg/nexa/usr/bin
-          cp nexa pkg/nexa/usr/bin/nexa
-          cp openwrt/nexa.init pkg/nexa/etc/init.d/nexa
-          chmod +x pkg/nexa/etc/init.d/nexa
-          cd pkg && tar -czf ../nexa-${{ matrix.asset_suffix }}.tar.gz nexa
-          cd ..
-          # 同时输出裸二进制，方便直接 ./nexa 运行
           cp nexa nexa-${{ matrix.asset_suffix }}
-          ls -lh nexa-${{ matrix.asset_suffix }} nexa-${{ matrix.asset_suffix }}.tar.gz
+          ls -lh nexa-${{ matrix.asset_suffix }}
 
       - name: create release
         uses: softprops/action-gh-release@v2
