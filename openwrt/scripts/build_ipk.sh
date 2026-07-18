@@ -23,6 +23,11 @@ if [ ! -f "$BINARY_PATH" ]; then
     exit 1
 fi
 
+# 提前把可能是相对路径的入参转换为绝对路径，避免后面 cd 到临时目录后失效
+BINARY_PATH="$(cd "$(dirname "$BINARY_PATH")" && pwd)/$(basename "$BINARY_PATH")"
+mkdir -p "$OUT_DIR"
+OUT_DIR="$(cd "$OUT_DIR" && pwd)"
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TEMPLATES_DIR="${SCRIPT_DIR}/../templates"
 BUILD_DIR="$(mktemp -d)"
@@ -85,7 +90,6 @@ tar czf "${BUILD_DIR}/control.tar.gz" ./ --owner=0 --group=0
 
 echo "2.0" > "${BUILD_DIR}/debian-binary"
 
-mkdir -p "${OUT_DIR}"
 IPK_NAME="luci-app-nexa_${VERSION}_${OPKG_ARCH}.ipk"
 cd "${BUILD_DIR}"
 tar czf "${OUT_DIR}/${IPK_NAME}" \
