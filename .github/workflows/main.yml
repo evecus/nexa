@@ -6,7 +6,7 @@ on:
       version:
         description: '版本号 (如 1.0.0)，留空则自动生成'
         required: false
-        default: ''
+        default: '1.0.0'
         type: string
 
 permissions:
@@ -61,8 +61,10 @@ jobs:
       - name: create release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: test
-          name: nexa test
+          tag_name: v${{ github.event.inputs.version }}
+          name: "nexa v${{ github.event.inputs.version }}"
           files: |
             nexa-linux-amd64
             nexa-linux-arm64
+          env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
