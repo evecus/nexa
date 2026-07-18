@@ -3,6 +3,6 @@ Version: {{VERSION}}
 Depends: libc, luci-base
 License: GPL-2.0-only
 Section: luci
-Architecture: {{ARCH}}
+Architecture: all
 Installed-Size: {{INSTALLED_SIZE}}
-Description: LuCI interface for Nexa proxy daemon
+Description: Nexa proxy daemon + LuCI interface (binary bundled, arch: {{REAL_ARCH}})

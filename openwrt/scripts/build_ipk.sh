@@ -1,20 +1,25 @@
 #!/bin/bash
 # build_ipk.sh - 把已编译好的 nexa 二进制 + LuCI 界面打包成单个 luci-app-nexa IPK
 #
+# 注意：Architecture 固定标为 all（约定：仅用于手动下载对应文件安装，
+# 不适用于 opkg 远程源/自动依赖解析场景 —— all 会让 opkg 跳过架构校验，
+# 装错架构不会在安装阶段报错，只会在服务启动时失败）。
+# 真实架构信息写入 IPK 文件名和 control 的 Description 字段，安装前请自行核对。
+#
 # 用法:
-#   build_ipk.sh <binary_path> <opkg_arch> <version> <output_dir>
+#   build_ipk.sh <binary_path> <real_arch_label> <version> <output_dir>
 #
 # 示例:
-#   build_ipk.sh dist/nexa-linux-arm64 aarch64_generic 1.0.0-r1 /tmp/out
+#   build_ipk.sh dist/nexa-aarch64 aarch64_cortex-a53 1.0.0-r1 release
 set -e
 
 BINARY_PATH="$1"
-OPKG_ARCH="$2"
+REAL_ARCH="$2"     # 仅用于文件名和 Description 标注，不写入 Architecture 字段
 VERSION="$3"
 OUT_DIR="$4"
 
-if [ -z "$BINARY_PATH" ] || [ -z "$OPKG_ARCH" ] || [ -z "$VERSION" ] || [ -z "$OUT_DIR" ]; then
-    echo "用法: $0 <binary_path> <opkg_arch> <version> <output_dir>" >&2
+if [ -z "$BINARY_PATH" ] || [ -z "$REAL_ARCH" ] || [ -z "$VERSION" ] || [ -z "$OUT_DIR" ]; then
+    echo "用法: $0 <binary_path> <real_arch_label> <version> <output_dir>" >&2
     exit 1
 fi
 
@@ -44,7 +49,7 @@ mkdir -p "${PKG_DATA}/usr/share/rpcd/ucode"
 mkdir -p "${PKG_DATA}/www/luci-static/resources/view/nexa"
 mkdir -p "${PKG_CTRL}"
 
-echo ">>> Building luci-app-nexa ${VERSION} (${OPKG_ARCH})"
+echo ">>> Building luci-app-nexa ${VERSION} (bundled binary arch: ${REAL_ARCH}, IPK Architecture: all)"
 
 # ── 二进制 ────────────────────────────────────────────────
 cp "${BINARY_PATH}" "${PKG_DATA}/usr/bin/nexa"
@@ -69,11 +74,11 @@ chmod 755 \
     "${PKG_DATA}/etc/uci-defaults/luci-app-nexa" \
     "${PKG_DATA}/usr/share/rpcd/ucode/luci.nexa"
 
-# ── control（替换版本/架构/体积）───────────────────────────
+# ── control（架构固定 all，真实架构写入 Description）───────
 INSTALLED_SIZE=$(du -sk "${PKG_DATA}" | awk '{print $1}')
 sed \
     -e "s/{{VERSION}}/${VERSION}/g" \
-    -e "s/{{ARCH}}/${OPKG_ARCH}/g" \
+    -e "s/{{REAL_ARCH}}/${REAL_ARCH}/g" \
     -e "s/{{INSTALLED_SIZE}}/${INSTALLED_SIZE}/g" \
     "${TEMPLATES_DIR}/control" > "${PKG_CTRL}/control"
 
@@ -90,7 +95,8 @@ tar czf "${BUILD_DIR}/control.tar.gz" ./ --owner=0 --group=0
 
 echo "2.0" > "${BUILD_DIR}/debian-binary"
 
-IPK_NAME="luci-app-nexa_${VERSION}_${OPKG_ARCH}.ipk"
+# 文件名带真实架构标识，方便手动核对，避免装错设备
+IPK_NAME="luci-app-nexa_${VERSION}_${REAL_ARCH}.ipk"
 cd "${BUILD_DIR}"
 tar czf "${OUT_DIR}/${IPK_NAME}" \
     ./debian-binary ./control.tar.gz ./data.tar.gz
