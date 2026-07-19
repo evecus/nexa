@@ -389,7 +389,7 @@ var tmplText = "{{- /* nft 模板，规则文本 1:1 对齐原 hijack.ut。 */ -
 	"\n" +
 	"\t{{ if .LanProxy }}\n" +
 	"\tchain dstnat {\n" +
-	"\t\ttype nat hook prerouting priority dstnat + 1; policy accept;\n" +
+	"\t\ttype nat hook prerouting priority dstnat - 10; policy accept;\n" +
 	"\t\tiifname @lan_inbound_device jump lan_dns_hijack\n" +
 	"\t\t{{ if eq .TcpMode \"redirect\" -}}\n" +
 	"\t\tfib daddr type { local, broadcast, anycast, multicast } counter return\n" +
