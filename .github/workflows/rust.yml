@@ -1,0 +1,103 @@
+name: Build rust
+
+on:
+  workflow_dispatch:
+
+env:
+  BIN_NAME: nexa
+  TARGET: aarch64-unknown-linux-musl
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build aarch64-unknown-linux-musl
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-musl
+
+      - name: Cache cargo & target
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: aarch64-unknown-linux-musl
+
+      # rusqlite 开启了 bundled feature，会在构建时编译内嵌的 sqlite3 C 代码，
+      # 交叉编译到 musl 需要一套 aarch64-linux-musl 的 C 交叉工具链。
+      # 从 GitHub Release 拉取预编译工具链（cross-tools/musl-cross），
+      # 比直连 musl.cc 更稳定，且带 sha256 校验文件。
+      - name: Install aarch64-musl C cross toolchain
+        run: |
+          set -euo pipefail
+          TARGET=aarch64-unknown-linux-musl
+          BASE_URL="https://github.com/cross-tools/musl-cross/releases/latest/download"
+
+          curl -fsSL -o /tmp/${TARGET}.tar.xz "${BASE_URL}/${TARGET}.tar.xz"
+          curl -fsSL -o /tmp/${TARGET}.tar.xz.sha256 "${BASE_URL}/${TARGET}.tar.xz.sha256"
+
+          cd /tmp
+          # 校验文件内容格式不固定（可能只有一行哈希值，没有 "  文件名" 后缀），
+          # 因此不用 sha256sum -c，改为手动提取哈希值比对。
+          EXPECTED_SHA256=$(grep -oE '[0-9a-f]{64}' "${TARGET}.tar.xz.sha256" | head -n1)
+          ACTUAL_SHA256=$(sha256sum "${TARGET}.tar.xz" | awk '{print $1}')
+          echo "expected: ${EXPECTED_SHA256}"
+          echo "actual:   ${ACTUAL_SHA256}"
+          if [ -z "${EXPECTED_SHA256}" ] || [ "${EXPECTED_SHA256}" != "${ACTUAL_SHA256}" ]; then
+            echo "sha256 mismatch!" >&2
+            exit 1
+          fi
+
+          sudo mkdir -p /opt/x-tools
+          sudo tar -xf "${TARGET}.tar.xz" -C /opt/x-tools
+
+          # 工具链解压后的可执行文件目录，例如 /opt/x-tools/aarch64-unknown-linux-musl/bin
+          TOOLCHAIN_BIN=$(find /opt/x-tools -maxdepth 2 -type d -name bin | head -n1)
+          echo "TOOLCHAIN_BIN=${TOOLCHAIN_BIN}"
+          echo "${TOOLCHAIN_BIN}" >> "$GITHUB_PATH"
+
+      - name: Locate cross gcc/ar binary names
+        id: toolchain
+        run: |
+          set -euo pipefail
+          GCC_BIN=$(find /opt/x-tools -type f -name "*-gcc" | head -n1)
+          AR_BIN=$(find /opt/x-tools -type f -name "*-ar" | head -n1)
+          echo "gcc=$(basename "$GCC_BIN")" >> "$GITHUB_OUTPUT"
+          echo "ar=$(basename "$AR_BIN")" >> "$GITHUB_OUTPUT"
+          echo "Found gcc: $GCC_BIN"
+          echo "Found ar:  $AR_BIN"
+
+      - name: Build release binary
+        env:
+          CC_aarch64_unknown_linux_musl: ${{ steps.toolchain.outputs.gcc }}
+          AR_aarch64_unknown_linux_musl: ${{ steps.toolchain.outputs.ar }}
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: ${{ steps.toolchain.outputs.gcc }}
+        run: cargo build --release --target aarch64-unknown-linux-musl
+
+      - name: Show binary info
+        run: file target/aarch64-unknown-linux-musl/release/${BIN_NAME}
+
+      - name: Package artifact
+        run: |
+          mkdir -p dist
+          cp target/aarch64-unknown-linux-musl/release/${BIN_NAME} dist/
+          tar -C dist -czvf ${BIN_NAME}-aarch64-unknown-linux-musl.tar.gz ${BIN_NAME}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BIN_NAME }}-aarch64-unknown-linux-musl
+          path: ${{ env.BIN_NAME }}-aarch64-unknown-linux-musl.tar.gz
+          if-no-files-found: error
+
+      - name: Upload to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.BIN_NAME }}-aarch64-unknown-linux-musl.tar.gz
