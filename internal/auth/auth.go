@@ -19,8 +19,9 @@ const (
 )
 
 type credentials struct {
-	Username string `json:"username"`
-	Hash     string `json:"hash"` // bcrypt
+	Username     string `json:"username"`
+	Hash         string `json:"hash"`         // bcrypt
+	AuthDisabled bool   `json:"auth_disabled"` // true 时跳过登录校验，允许无验证访问
 }
 
 type Auth struct {
@@ -80,6 +81,21 @@ func (a *Auth) Verify(tokenStr string) bool {
 	return err == nil && tok != nil && tok.Valid
 }
 
+// SetAuthDisabled 打开/关闭"无验证访问"总开关，持久化到凭据文件。
+func (a *Auth) SetAuthDisabled(disabled bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.cred.AuthDisabled = disabled
+	a.saveLocked()
+}
+
+// IsAuthDisabled 返回当前是否处于"无验证访问"状态。
+func (a *Auth) IsAuthDisabled() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.cred.AuthDisabled
+}
+
 // ChangePassword 修改用户名/密码。
 func (a *Auth) ChangePassword(user, pass string) error {
 	a.mu.Lock()
@@ -88,7 +104,8 @@ func (a *Auth) ChangePassword(user, pass string) error {
 	if err != nil {
 		return err
 	}
-	a.cred = credentials{Username: user, Hash: string(h)}
+	a.cred.Username = user
+	a.cred.Hash = string(h)
 	a.saveLocked()
 	return nil
 }
@@ -98,6 +115,11 @@ func (a *Auth) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// /api/auth/login 放行
 		if r.URL.Path == "/api/auth/login" || r.URL.Path == "/api/auth/setup" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		// 总开关：无验证访问模式下直接放行，不校验 token
+		if a.IsAuthDisabled() {
 			next.ServeHTTP(w, r)
 			return
 		}
