@@ -877,6 +877,34 @@ route('#/settings', async (c) => {
   });
   card.appendChild(UI.el('div', { class: 'mt-20' }, saveBtn));
   c.appendChild(card);
+
+  // ── 无验证访问总开关 ──
+  const noAuthCard = UI.el('div', { class: 'card mt-20' });
+  noAuthCard.appendChild(UI.el('div', { class: 'card-title' }, '无验证访问'));
+  noAuthCard.appendChild(UI.el('div', { class: 'card-desc' },
+    '开启后，管理页面和 API 将不再需要登录即可访问。任何能连接到本设备管理端口的人都可以直接操作，请仅在你确认网络环境可信时开启。'));
+
+  let noAuthState = false;
+  try {
+    const r = await API.get('/api/auth/no-auth');
+    noAuthState = !!r.auth_disabled;
+  } catch (e) { /* 忽略，默认按关闭展示 */ }
+
+  const noAuthToggle = UI.toggle(noAuthState, async (v) => {
+    try {
+      await API.put('/api/auth/no-auth', { auth_disabled: v });
+      UI.toast(v ? '已开启无验证访问' : '已恢复登录验证', v ? 'err' : 'ok');
+      if (v) {
+        // 开启后当前会话也不再需要 token，无需强制跳转
+      }
+    } catch (e) {
+      UI.toast('操作失败：' + e.message, 'err');
+      const cb = noAuthToggle.querySelector('input[type=checkbox]');
+      if (cb) cb.checked = !v; // 回滚显示状态
+    }
+  });
+  noAuthCard.appendChild(UI.field('允许无验证访问', noAuthToggle, '默认关闭，建议仅临时开启'));
+  c.appendChild(noAuthCard);
 });
 
 // 每次路由前清理上一页的资源
