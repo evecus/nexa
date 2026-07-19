@@ -71,6 +71,10 @@ func (r *Router) Routes() http.Handler {
 		m.Put("/api/profiles/{name}", r.handleWriteProfile)
 		m.Delete("/api/profiles/{name}", r.handleDeleteProfile)
 
+		// 无验证访问总开关
+		m.Get("/api/auth/no-auth", r.handleGetAuthDisabled)
+		m.Put("/api/auth/no-auth", r.handleSetAuthDisabled)
+
 		// 日志
 		m.Get("/api/logs/app", r.handleAppLog)
 		m.Get("/api/logs/core", r.handleCoreLog)
@@ -99,6 +103,26 @@ func (r *Router) handleLogin(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"token": tok})
+}
+
+// handleGetAuthDisabled 返回当前"无验证访问"开关状态。
+func (r *Router) handleGetAuthDisabled(w http.ResponseWriter, req *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]bool{"auth_disabled": r.auth.IsAuthDisabled()})
+}
+
+// handleSetAuthDisabled 打开/关闭"无验证访问"开关。
+// 注意：此接口挂在需要登录的路由组下——必须已通过认证才能打开该开关，
+// 避免未授权者主动把系统切到无验证模式。
+func (r *Router) handleSetAuthDisabled(w http.ResponseWriter, req *http.Request) {
+	var body struct {
+		AuthDisabled bool `json:"auth_disabled"`
+	}
+	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	r.auth.SetAuthDisabled(body.AuthDisabled)
+	writeJSON(w, http.StatusOK, map[string]bool{"auth_disabled": body.AuthDisabled})
 }
 
 func (r *Router) handleChangePassword(w http.ResponseWriter, req *http.Request) {
