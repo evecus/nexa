@@ -1,0 +1,58 @@
+[package]
+name = "nexa"
+version = "0.1.0"
+edition = "2021"
+description = "nexa 透明代理管理守护进程（Rust 重写版）：HTTP API + 内嵌 Web 面板"
+
+[[bin]]
+name = "nexa"
+path = "src/main.rs"
+
+[profile.release]
+strip         = "symbols"
+debug         = false
+opt-level = 3
+lto = "thin"
+
+[dependencies]
+# 异步运行时
+tokio = { version = "1", features = ["full"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+futures = "0.3"
+async-stream = "0.3"
+
+# HTTP 框架
+axum = { version = "0.7", features = ["macros", "ws"] }
+
+# 序列化
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# 数据库
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+# 认证
+jsonwebtoken = "9"
+bcrypt = "0.16"
+subtle = "2"
+
+# 时间
+chrono = { version = "0.4", features = ["clock"] }
+
+# 静态资源嵌入
+rust-embed = "8"
+
+# 日志
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# 错误处理
+anyhow = "1"
+thiserror = "1"
+
+# 信号 / 进程
+nix = { version = "0.29", features = ["signal", "process"] }
+libc = "0.2"
+
+# 正则
+regex = "1"
