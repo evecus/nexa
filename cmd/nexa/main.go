@@ -10,12 +10,14 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
 	"github.com/nexa-proxy/nexa/internal/api"
 	"github.com/nexa-proxy/nexa/internal/app"
 	"github.com/nexa-proxy/nexa/internal/auth"
+	"github.com/nexa-proxy/nexa/internal/paths"
 	"github.com/nexa-proxy/nexa/web"
 )
 
@@ -23,8 +25,20 @@ import (
 var version = "dev"
 
 func main() {
-	addr := flag.String("addr", ":9990", "HTTP 监听地址")
+	addr := flag.String("addr", ":9990", "HTTP 监听地址（与 -p 同时指定时以 -p 为准）")
+	dataDir := flag.String("d", "", "数据目录（默认 /etc/nexa，不指定则使用默认值）")
+	port := flag.Int("p", 0, "Web 监听端口（默认 9990，不指定则使用默认值）")
 	flag.Parse()
+
+	// -d 指定数据目录，替换默认的 /etc/nexa 及其派生路径（日志、运行时目录等）。
+	// 必须在 app.New() 之前调用，因为 app/store/logger 等模块都依赖 paths 包中的路径变量。
+	paths.Init(*dataDir)
+
+	// -p 指定端口，优先于 -addr；不指定则使用默认端口 9990。
+	listenAddr := *addr
+	if *port > 0 {
+		listenAddr = ":" + strconv.Itoa(*port)
+	}
 
 	a, err := app.New()
 	if err != nil {
@@ -46,7 +60,7 @@ func main() {
 	mux.Handle("/", http.FileServer(http.FS(dist)))
 
 	srv := &http.Server{
-		Addr:              *addr,
+		Addr:              listenAddr,
 		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
@@ -58,7 +72,7 @@ func main() {
 		}
 	}()
 
-	log.Printf("nexa listen 0.0.0.0:%s", *addr)
+	log.Printf("nexa listen 0.0.0.0%s，数据目录: %s", listenAddr, paths.HomeDir)
 
 	// 信号处理：优雅关闭，清理网络规则并杀掉核心进程
 	sigCh := make(chan os.Signal, 1)
