@@ -1,29 +1,62 @@
 package paths
 
-// 路径常量。与原 luci-app-proxy 的 include.sh 语义一致，仅改名 nexa。
-const (
-	HomeDir    = "/etc/nexa"
+// 路径变量。与原 luci-app-proxy 的 include.sh 语义一致，仅改名 nexa。
+// 默认值对齐原来的常量；若通过 Init() 指定了自定义数据目录（-d 参数），
+// 则 HomeDir 及其派生路径（含日志目录、运行时目录）会一并迁移到该目录下，
+// 便于非 root/非 OpenWrt 环境下使用自定义数据目录运行。
+var (
+	HomeDir     = "/etc/nexa"
 	ProfilesDir = HomeDir + "/profiles"
-	RunDir     = HomeDir + "/run"
-	NftDir     = HomeDir + "/firewall"
+	RunDir      = HomeDir + "/run"
+	NftDir      = HomeDir + "/firewall"
 
 	GeoIPCnNft  = NftDir + "/geoip_cn.nft"
 	GeoIP6CnNft = NftDir + "/geoip6_cn.nft"
 
-	LogDir        = "/var/log/nexa"
-	AppLogPath    = LogDir + "/app.log"
-	CoreLogPath   = LogDir + "/core.log"
-	DebugLogPath  = LogDir + "/debug.log"
+	LogDir       = "/var/log/nexa"
+	AppLogPath   = LogDir + "/app.log"
+	CoreLogPath  = LogDir + "/core.log"
+	DebugLogPath = LogDir + "/debug.log"
 
-	TempDir       = "/var/run/nexa"
-	PidFilePath   = TempDir + "/nexa.pid"
+	TempDir     = "/var/run/nexa"
+	PidFilePath = TempDir + "/nexa.pid"
 
-	DBPath        = HomeDir + "/nexa.db"
+	DBPath = HomeDir + "/nexa.db"
 
 	// 标志文件
 	BridgeNfCallIptablesFlag  = TempDir + "/bridge_nf_call_iptables.flag"
 	BridgeNfCallIp6tablesFlag = TempDir + "/bridge_nf_call_ip6tables.flag"
 )
+
+// Init 使用自定义数据目录重新计算所有派生路径。
+// dir 为空时保持默认值（/etc/nexa 等）不变。
+// 必须在 app.New() / logger.New() / store.New() 等任何使用 paths 包的初始化之前调用。
+func Init(dir string) {
+	if dir == "" {
+		return
+	}
+
+	HomeDir = dir
+	ProfilesDir = HomeDir + "/profiles"
+	RunDir = HomeDir + "/run"
+	NftDir = HomeDir + "/firewall"
+
+	GeoIPCnNft = NftDir + "/geoip_cn.nft"
+	GeoIP6CnNft = NftDir + "/geoip6_cn.nft"
+
+	LogDir = HomeDir + "/log"
+	AppLogPath = LogDir + "/app.log"
+	CoreLogPath = LogDir + "/core.log"
+	DebugLogPath = LogDir + "/debug.log"
+
+	TempDir = HomeDir + "/run_tmp"
+	PidFilePath = TempDir + "/nexa.pid"
+
+	DBPath = HomeDir + "/nexa.db"
+
+	BridgeNfCallIptablesFlag = TempDir + "/bridge_nf_call_iptables.flag"
+	BridgeNfCallIp6tablesFlag = TempDir + "/bridge_nf_call_ip6tables.flag"
+}
 
 // Paths 返回给前端的路径信息（对齐原 ubus get_paths）。
 type Paths struct {
