@@ -19,7 +19,7 @@ start_service() {
     local port
     config_get port main port '9990'
 
-    procd_open_instance
+    procd_open_instance "$CONF"
     procd_set_param command "$PROG" -addr ":${port}"
     procd_set_param respawn 3600 5 5
     procd_set_param stdout 1
