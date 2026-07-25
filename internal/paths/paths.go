@@ -13,7 +13,7 @@ var (
 	GeoIPCnNft  = NftDir + "/geoip_cn.nft"
 	GeoIP6CnNft = NftDir + "/geoip6_cn.nft"
 
-	LogDir       = "/var/log/nexa"
+	LogDir       = "/tmp/nexa"
 	AppLogPath   = LogDir + "/app.log"
 	CoreLogPath  = LogDir + "/core.log"
 	DebugLogPath = LogDir + "/debug.log"
@@ -44,7 +44,7 @@ func Init(dir string) {
 	GeoIPCnNft = NftDir + "/geoip_cn.nft"
 	GeoIP6CnNft = NftDir + "/geoip6_cn.nft"
 
-	LogDir = HomeDir + "/log"
+	LogDir = "/tmp/nexa"
 	AppLogPath = LogDir + "/app.log"
 	CoreLogPath = LogDir + "/core.log"
 	DebugLogPath = LogDir + "/debug.log"
