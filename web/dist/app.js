@@ -208,9 +208,12 @@ function renderLogin() {
 // options: 可选下拉列表（字符串数组），传入时会渲染一个 select 供用户从系统已检测到的候选项中挑选。
 function dynList(values, options) {
   const wrap = UI.el('div', { class: 'dyn-list' });
-  const render = (vals) => {
+  const render = (rawVals) => {
+    // 后端可能返回 null（Go 的 nil slice 序列化为 JSON null），这里统一规整为数组，
+    // 避免 null.includes(...) / null.splice(...) 报错导致后续渲染（如"添加规则"按钮）被中断。
+    const vals = rawVals || [];
     wrap.innerHTML = '';
-    (vals || []).forEach((v, i) => {
+    vals.forEach((v, i) => {
       const chip = UI.el('span', { class: 'chip' }, v,
         UI.el('span', { class: 'x', onclick: () => { vals.splice(i, 1); render(vals); } }, '×'));
       wrap.appendChild(chip);
@@ -613,9 +616,9 @@ route('#/proxy', async (c) => {
     ));
     if (type === 'router') {
       card.appendChild(UI.el('div', { class: 'row-fields' },
-        UI.el('div', {}, UI.el('label', {}, '用户'), dynList(ac.user, users)),
-        UI.el('div', {}, UI.el('label', {}, '用户组'), dynList(ac.group, groups)),
-        UI.el('div', {}, UI.el('label', {}, 'CGroup'), dynList(ac.cgroup, cgroups), UI.el('div', { class: 'hint' }, cgroupHint))
+        UI.el('div', {}, UI.el('label', {}, '用户'), dynList(ac.user || (ac.user = []), users)),
+        UI.el('div', {}, UI.el('label', {}, '用户组'), dynList(ac.group || (ac.group = []), groups)),
+        UI.el('div', {}, UI.el('label', {}, 'CGroup'), dynList(ac.cgroup || (ac.cgroup = []), cgroups), UI.el('div', { class: 'hint' }, cgroupHint))
       ));
     } else {
       card.appendChild(UI.el('div', { class: 'row-fields' },
