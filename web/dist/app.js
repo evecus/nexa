@@ -141,7 +141,13 @@ function renderLayout() {
 }
 
 async function router() {
-  if (!localStorage.getItem('nexa_token')) { location.hash = '#/login'; }
+  if (!localStorage.getItem('nexa_token')) {
+    // 本地没有 token 不代表一定要登录：服务端可能已开启"无验证访问"。
+    // 直接探测一个受保护接口，401 才说明确实需要登录；其他情况（如 200）
+    // 说明服务端已放行，此时不应再把用户强制赶到登录页。
+    const noAuth = await checkNoAuthAllowed();
+    if (!noAuth && location.hash !== '#/login') { location.hash = '#/login'; }
+  }
   const hash = location.hash || '#/app';
   if (hash === '#/login') {
     document.getElementById('app').innerHTML = '';
@@ -179,6 +185,23 @@ async function renderTopbar() {
 
 window.addEventListener('hashchange', router);
 
+// 探测服务端"无验证访问"是否开启。用原生 fetch 而非 API.get，
+// 避免其内置的 401 -> 跳转登录逻辑在这里产生死循环。
+// 短时间内缓存结果，避免每次路由切换都发请求。
+let _noAuthCache = null, _noAuthCacheAt = 0;
+async function checkNoAuthAllowed() {
+  const now = Date.now();
+  if (_noAuthCache !== null && now - _noAuthCacheAt < 5000) return _noAuthCache;
+  try {
+    const r = await fetch('/api/auth/no-auth');
+    _noAuthCache = r.ok;
+  } catch (e) {
+    _noAuthCache = false;
+  }
+  _noAuthCacheAt = now;
+  return _noAuthCache;
+}
+
 // ── 登录页 ───────────────────────────
 function renderLogin() {
   const wrap = UI.el('div', { class: 'login-wrap' });
@@ -186,7 +209,7 @@ function renderLogin() {
   card.appendChild(UI.el('div', { class: 'brand-dot' }, 'N'));
   card.appendChild(UI.el('h1', {}, 'Nexa'));
   card.appendChild(UI.el('div', { class: 'sub' }, '透明代理管理面板'));
-  const userI = UI.input('text', 'admin', '用户名');
+  const userI = UI.input('text', '', 'admin');
   const passI = UI.input('password', '', '密码');
   card.appendChild(UI.field('用户名', userI));
   card.appendChild(UI.field('密码', passI));
@@ -858,7 +881,15 @@ route('#/settings', async (c) => {
   card.appendChild(UI.el('div', { class: 'card-title' }, '用户设置'));
   card.appendChild(UI.el('div', { class: 'card-desc' }, '修改登录账号的用户名和密码'));
 
-  const userI = UI.input('text', 'admin', '用户名');
+  // 回显真实的当前用户名，而不是写死显示 admin——
+  // 否则每次打开本页都会把用户名"重置"回 admin 的假象，看起来像改不了。
+  let currentUsername = 'admin';
+  try {
+    const me = await API.get('/api/auth/me');
+    if (me && me.username) currentUsername = me.username;
+  } catch (e) { /* 获取失败时退回默认展示，不阻塞页面渲染 */ }
+
+  const userI = UI.input('text', currentUsername, '用户名');
   const passI = UI.input('password', '', '新密码');
   const pass2I = UI.input('password', '', '确认新密码');
   card.appendChild(UI.field('用户名', userI));

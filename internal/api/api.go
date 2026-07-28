@@ -38,11 +38,16 @@ func (r *Router) Routes() http.Handler {
 
 	// auth 不需登录
 	mux.Post("/api/auth/login", r.handleLogin)
-	mux.Put("/api/auth/password", r.handleChangePassword)
 
 	// 其余需登录
 	mux.Group(func(m chi.Router) {
 		m.Use(r.auth.Middleware)
+
+		// 修改用户名/密码必须登录后才能操作，避免未授权者篡改凭据。
+		// 注：当"无验证访问"开启时，中间件本身会放行所有请求，
+		// 这属于用户主动选择的信任模式，与此处的登录校验并不冲突。
+		m.Get("/api/auth/me", r.handleGetMe)
+		m.Put("/api/auth/password", r.handleChangePassword)
 
 		// 对齐 ubus luci.proxy
 		m.Get("/api/paths", r.handlePaths)
@@ -103,6 +108,11 @@ func (r *Router) handleLogin(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"token": tok})
+}
+
+// handleGetMe 返回当前登录用户名，供设置页回显真实值。
+func (r *Router) handleGetMe(w http.ResponseWriter, req *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{"username": r.auth.Username()})
 }
 
 // handleGetAuthDisabled 返回当前"无验证访问"开关状态。
