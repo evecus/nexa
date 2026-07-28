@@ -134,15 +134,8 @@ func runOn() {
 		log.Fatalf("读取配置失败: %v", err)
 	}
 
-	if !cfg.Config.Enabled {
-		log.Println("配置中 enabled=0，未启用，跳过防火墙/策略路由配置。")
-		return
-	}
-	if !cfg.Proxy.Enabled {
-		log.Println("代理未启用，跳过防火墙/策略路由配置。")
-		return
-	}
-
+	// 不受 config.enabled / proxy.enabled 影响：on 命令是纯粹的执行动作，
+	// 只要磁盘里有配置就无条件下发防火墙规则和策略路由。
 	// 先清理旧规则，避免残留导致重复插入（对齐 Apply 前的 cleanup 惯例）。
 	a.Net.Cleanup(cfg)
 
