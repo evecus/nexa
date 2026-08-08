@@ -5,28 +5,30 @@ import (
 	"net"
 	"os"
 	"strings"
+
+	"github.com/nexa-proxy/nexa/internal/cgroupsupport"
 )
 
 // Config 顶层配置容器，对应原 /etc/config/proxy 的所有 section。
 type Config struct {
-	Config                ConfigSection         `json:"config"`
-	Procd                 ProcdSection          `json:"procd"`
-	Proxy                 ProxySection          `json:"proxy"`
-	RouterAccessControls  []RouterAccessControl `json:"router_access_controls"`
-	LanAccessControls     []LanAccessControl    `json:"lan_access_controls"`
-	Routing               RoutingSection        `json:"routing"`
-	Log                   LogSection            `json:"log"`
+	Config               ConfigSection         `json:"config"`
+	Procd                ProcdSection          `json:"procd"`
+	Proxy                ProxySection          `json:"proxy"`
+	RouterAccessControls []RouterAccessControl `json:"router_access_controls"`
+	LanAccessControls    []LanAccessControl    `json:"lan_access_controls"`
+	Routing              RoutingSection        `json:"routing"`
+	Log                  LogSection            `json:"log"`
 }
 
 // ConfigSection 对应 UCI section 'config'
 type ConfigSection struct {
-	Enabled               bool   `json:"enabled"`
-	Profile               string `json:"profile"`
-	RunBinary             string `json:"run_binary"`
-	RunArgs               string `json:"run_args"`
-	StartDelay            int    `json:"start_delay"`
-	ScheduledRestart      bool   `json:"scheduled_restart"`
-	ScheduledRestartCron  string `json:"scheduled_restart_cron"`
+	Enabled              bool   `json:"enabled"`
+	Profile              string `json:"profile"`
+	RunBinary            string `json:"run_binary"`
+	RunArgs              string `json:"run_args"`
+	StartDelay           int    `json:"start_delay"`
+	ScheduledRestart     bool   `json:"scheduled_restart"`
+	ScheduledRestartCron string `json:"scheduled_restart_cron"`
 }
 
 // ProcdSection 对应 UCI section 'procd'
@@ -36,39 +38,39 @@ type ProcdSection struct {
 
 // ProxySection 对应 UCI section 'proxy'
 type ProxySection struct {
-	Enabled              bool     `json:"enabled"`
-	IPv4DnsHijack        bool     `json:"ipv4_dns_hijack"`
-	IPv6DnsHijack        bool     `json:"ipv6_dns_hijack"`
-	IPv4Proxy            bool     `json:"ipv4_proxy"`
-	IPv6Proxy            bool     `json:"ipv6_proxy"`
-	FakeIPPingHijack     bool     `json:"fake_ip_ping_hijack"`
-	TcpMode              string   `json:"tcp_mode"` // redirect | tproxy | tun
-	UdpMode              string   `json:"udp_mode"` // redirect | tproxy | tun
-	RouterProxy          bool     `json:"router_proxy"`
-	LanProxy             bool     `json:"lan_proxy"`
-	LanInboundInterface  []string `json:"lan_inbound_interface"`
-	DnsPort              string   `json:"dns_port"`
-	RedirPort            string   `json:"redir_port"`
-	TproxyPort           string   `json:"tproxy_port"`
-	TunDevice            string   `json:"tun_device"`
-	UIPort               string   `json:"ui_port"`
-	UIPath               string   `json:"ui_path"`
-	FakeIPRange          string   `json:"fake_ip_range"`
-	FakeIP6Range         string   `json:"fake_ip6_range"`
-	ReservedIP           []string `json:"reserved_ip"`
-	ReservedIP6          []string `json:"reserved_ip6"`
-	BypassChinaMainlandIP  bool   `json:"bypass_china_mainland_ip"`
-	BypassChinaMainlandIP6 bool   `json:"bypass_china_mainland_ip6"`
-	ProxyTcpDport        string   `json:"proxy_tcp_dport"`
-	ProxyUdpDport        string   `json:"proxy_udp_dport"`
-	BypassDscp           []string `json:"bypass_dscp"`
-	BypassFwmark         []string `json:"bypass_fwmark"`
-	BypassCgroup         bool     `json:"bypass_cgroup"`
-	BypassGid            bool     `json:"bypass_gid"`
-	BypassMark           bool     `json:"bypass_mark"`
-	BypassMarkValues     []string `json:"bypass_mark_values"`
-	TunTimeout           int      `json:"tun_timeout"`
-	TunInterval          int      `json:"tun_interval"`
+	Enabled                bool     `json:"enabled"`
+	IPv4DnsHijack          bool     `json:"ipv4_dns_hijack"`
+	IPv6DnsHijack          bool     `json:"ipv6_dns_hijack"`
+	IPv4Proxy              bool     `json:"ipv4_proxy"`
+	IPv6Proxy              bool     `json:"ipv6_proxy"`
+	FakeIPPingHijack       bool     `json:"fake_ip_ping_hijack"`
+	TcpMode                string   `json:"tcp_mode"` // redirect | tproxy | tun
+	UdpMode                string   `json:"udp_mode"` // redirect | tproxy | tun
+	RouterProxy            bool     `json:"router_proxy"`
+	LanProxy               bool     `json:"lan_proxy"`
+	LanInboundInterface    []string `json:"lan_inbound_interface"`
+	DnsPort                string   `json:"dns_port"`
+	RedirPort              string   `json:"redir_port"`
+	TproxyPort             string   `json:"tproxy_port"`
+	TunDevice              string   `json:"tun_device"`
+	UIPort                 string   `json:"ui_port"`
+	UIPath                 string   `json:"ui_path"`
+	FakeIPRange            string   `json:"fake_ip_range"`
+	FakeIP6Range           string   `json:"fake_ip6_range"`
+	ReservedIP             []string `json:"reserved_ip"`
+	ReservedIP6            []string `json:"reserved_ip6"`
+	BypassChinaMainlandIP  bool     `json:"bypass_china_mainland_ip"`
+	BypassChinaMainlandIP6 bool     `json:"bypass_china_mainland_ip6"`
+	ProxyTcpDport          string   `json:"proxy_tcp_dport"`
+	ProxyUdpDport          string   `json:"proxy_udp_dport"`
+	BypassDscp             []string `json:"bypass_dscp"`
+	BypassFwmark           []string `json:"bypass_fwmark"`
+	BypassCgroup           bool     `json:"bypass_cgroup"`
+	BypassGid              bool     `json:"bypass_gid"`
+	BypassMark             bool     `json:"bypass_mark"`
+	BypassMarkValues       []string `json:"bypass_mark_values"`
+	TunTimeout             int      `json:"tun_timeout"`
+	TunInterval            int      `json:"tun_interval"`
 }
 
 // RouterAccessControl 对应 UCI section 'router_access_control'（多实例）
@@ -130,25 +132,25 @@ func Default() *Config {
 		},
 		Procd: ProcdSection{FastReload: false},
 		Proxy: ProxySection{
-			Enabled:                true,
-			IPv4DnsHijack:          true,
-			IPv6DnsHijack:          true,
-			IPv4Proxy:              true,
-			IPv6Proxy:              true,
-			FakeIPPingHijack:       true,
-			TcpMode:                "redirect",
-			UdpMode:                "tun",
-			RouterProxy:            true,
-			LanProxy:               true,
-			LanInboundInterface:    defaultLanInboundInterface(),
-			DnsPort:                "1053",
-			RedirPort:              "7892",
-			TproxyPort:             "7893",
-			TunDevice:              "tun0",
-			UIPort:                 "9090",
-			UIPath:                 "ui",
-			FakeIPRange:            "198.18.0.0/15",
-			FakeIP6Range:           "fc00::/18",
+			Enabled:             true,
+			IPv4DnsHijack:       true,
+			IPv6DnsHijack:       true,
+			IPv4Proxy:           true,
+			IPv6Proxy:           true,
+			FakeIPPingHijack:    true,
+			TcpMode:             "redirect",
+			UdpMode:             "tun",
+			RouterProxy:         true,
+			LanProxy:            true,
+			LanInboundInterface: defaultLanInboundInterface(),
+			DnsPort:             "1053",
+			RedirPort:           "7892",
+			TproxyPort:          "7893",
+			TunDevice:           "tun0",
+			UIPort:              "9090",
+			UIPath:              "ui",
+			FakeIPRange:         "198.18.0.0/15",
+			FakeIP6Range:        "fc00::/18",
 			ReservedIP: []string{
 				"0.0.0.0/8", "10.0.0.0/8", "127.0.0.0/8", "100.64.0.0/10",
 				"169.254.0.0/16", "172.16.0.0/12", "192.168.0.0/16",
@@ -159,17 +161,17 @@ func Default() *Config {
 				"2001::/32", "2001:10::/28", "2001:20::/28", "2001:db8::/32",
 				"2002::/16", "fc00::/7", "fe80::/10", "ff00::/8",
 			},
-			BypassChinaMainlandIP:   false,
-			BypassChinaMainlandIP6:  false,
-			ProxyTcpDport:           "0-65535",
-			ProxyUdpDport:           "0-65535",
-			BypassDscp:              []string{"4"},
-			BypassCgroup:           true,
-			BypassGid:              false,
+			BypassChinaMainlandIP:  false,
+			BypassChinaMainlandIP6: false,
+			ProxyTcpDport:          "0-65535",
+			ProxyUdpDport:          "0-65535",
+			BypassDscp:             []string{"4"},
+			BypassCgroup:           defaultBypassCgroup(),
+			BypassGid:              defaultBypassGid(),
 			BypassMark:             false,
 			BypassMarkValues:       []string{},
-			TunTimeout:              30,
-			TunInterval:             1,
+			TunTimeout:             30,
+			TunInterval:            1,
 		},
 		RouterAccessControls: defaultRouterAccessControls(),
 		LanAccessControls: []LanAccessControl{
@@ -246,6 +248,20 @@ func defaultRouterAccessControls() []RouterAccessControl {
 func isOpenWrt() bool {
 	_, err := os.Stat("/etc/openwrt_release")
 	return err == nil
+}
+
+// defaultBypassCgroup 仅当系统实际支持 cgroup（v1 net_cls 或 v2 且挂载点可写）时才默认开启，
+// 与 defaultBypassGid 互补：cgroup 不支持的系统上，防回环完全依赖 GID 绕过。
+func defaultBypassCgroup() bool {
+	return cgroupsupport.Supported()
+}
+
+// defaultBypassGid GID 绕过是程序唯一可完全控制、且所有 Linux 系统都支持的防回环方式
+// （核心进程主 GID 由 nexa 自己创建的系统组决定，不依赖内核 cgroup 特性）。
+// 系统不支持 cgroup 时必须默认打开，作为唯一可靠的防回环手段；
+// 系统支持 cgroup 时默认关闭，避免同时叠加两套防回环规则造成冗余。
+func defaultBypassGid() bool {
+	return !cgroupsupport.Supported()
 }
 
 // defaultLanInboundInterface 根据系统类型返回局域网入站接口默认值。

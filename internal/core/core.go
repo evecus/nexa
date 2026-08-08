@@ -3,7 +3,6 @@
 package core
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -17,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/nexa-proxy/nexa/internal/cgroupsupport"
 	"github.com/nexa-proxy/nexa/internal/config"
 	"github.com/nexa-proxy/nexa/internal/logger"
 	"github.com/nexa-proxy/nexa/internal/paths"
@@ -124,18 +124,28 @@ func (m *Manager) Start(cfg *config.Config) error {
 		Pdeathsig: syscall.SIGTERM, // nexa 被 kill -9 时内核自动杀掉核心子进程
 	}
 
-	// GID 绕过：核心以 root 运行，主 GID 设为 nexa 组，nft 用 meta skgid 匹配绕过
+	// GID 绕过：核心以 root 运行，主 GID 设为 nexa 组，nft/iptables 用 skgid/owner --gid-owner 匹配绕过
 	// meta skgid 匹配的是主 GID，不是附加组，所以必须把 nexa 组设为主 GID，
 	// 同时把 root 组（GID 0）加到附加组里，保持 root 权限正常。
-	if cfg.Proxy.BypassGid {
+	//
+	// 系统不支持 cgroup 防回环时，GID 绕过是唯一可靠、程序完全可控的手段，
+	// 因此这里无条件评估「有效」GID 绕过开关：只要用户开启了，或者系统不支持 cgroup，就启用。
+	// 这样即使用户之前保存的配置是在支持 cgroup 的系统上生成的（BypassGid=false），
+	// 迁移到不支持 cgroup 的系统后依然能自动兜底，不会两种防回环手段都没有。
+	cgroupSupported := cgroupsupport.Supported()
+	effectiveBypassGid := cfg.Proxy.BypassGid || !cgroupSupported
+	if !cgroupSupported && cfg.Proxy.BypassCgroup {
+		m.log.App("核心", "当前系统不支持 cgroup 防回环，已自动改用 GID 绕过。")
+	}
+	if effectiveBypassGid {
 		gid, err := EnsureNexaGroup()
 		if err != nil {
 			m.log.App("核心", "警告：创建 nexa 组失败："+err.Error()+"，GID 绕过可能失效。")
 		} else {
 			cmd.SysProcAttr.Credential = &syscall.Credential{
-				Uid:    0,             // root
-				Gid:    uint32(gid),   // nexa 组为主 GID，meta skgid 匹配这个
-				Groups: []uint32{0},   // root 组为附加组，保持权限
+				Uid:    0,           // root
+				Gid:    uint32(gid), // nexa 组为主 GID，meta skgid / owner --gid-owner 匹配这个
+				Groups: []uint32{0}, // root 组为附加组，保持权限
 			}
 			m.log.App("核心", fmt.Sprintf("已将 nexa 组（GID %d）设为核心进程主 GID。", gid))
 		}
@@ -162,10 +172,13 @@ func (m *Manager) Start(cfg *config.Config) error {
 	// `socket cgroupv2 level 2 "services/<name>" counter return`（cgroup v2）
 	// 或 `meta cgroup <id> counter return`（cgroup v1）匹配不到，
 	// 会导致核心自身出站流量被自身规则再次劫持，连接数指数级增长，内存暴涨。
-	if err := m.placeIntoCgroup(cfg); err != nil {
-		m.log.App("核心", "警告：cgroup 设置失败："+err.Error()+"，防回环可能失效。")
-	} else {
-		m.log.App("核心", fmt.Sprintf("已将 PID %d 加入 cgroup。", m.pid))
+	// 系统不支持 cgroup 时直接跳过（已经用 GID 绕过兜底，见上文），避免打印无意义的失败警告。
+	if cgroupSupported {
+		if err := m.placeIntoCgroup(cfg); err != nil {
+			m.log.App("核心", "警告：cgroup 设置失败："+err.Error()+"，防回环可能失效（已同时启用 GID 绕过作为兜底）。")
+		} else {
+			m.log.App("核心", fmt.Sprintf("已将 PID %d 加入 cgroup。", m.pid))
+		}
 	}
 
 	// respawn 守护
@@ -183,15 +196,15 @@ func (m *Manager) placeIntoCgroup(cfg *config.Config) error {
 		return nil
 	}
 	pid := strconv.Itoa(m.pid)
-	switch cgroupsVersion() {
-	case 2:
+	switch cgroupsupport.Detect() {
+	case cgroupsupport.V2:
 		cgPath := "/sys/fs/cgroup/services/" + name
 		if err := os.MkdirAll(cgPath, 0755); err != nil {
 			// 目录可能已存在或已被其他子进程占用，尝试直接写父级
 			return writeCgroupProcs("/sys/fs/cgroup/services", pid)
 		}
 		return writeCgroupProcs(cgPath, pid)
-	case 1:
+	case cgroupsupport.V1:
 		cgPath := "/sys/fs/cgroup/net_cls/" + name
 		if err := os.MkdirAll(cgPath, 0755); err != nil {
 			return err
@@ -206,31 +219,6 @@ func (m *Manager) placeIntoCgroup(cfg *config.Config) error {
 
 func writeCgroupProcs(path, pid string) error {
 	return os.WriteFile(filepath.Join(path, "cgroup.procs"), []byte(pid), 0644)
-}
-
-// cgroupsVersion 判断 cgroup 版本。对齐 netmanager 的同名函数。
-func cgroupsVersion() int {
-	f, err := os.Open("/proc/mounts")
-	if err != nil {
-		return 2
-	}
-	defer f.Close()
-	sc := bufio.NewScanner(f)
-	for sc.Scan() {
-		fields := strings.Fields(sc.Text())
-		if len(fields) >= 3 {
-			// cgroup v2：type 为 cgroup2
-			if fields[2] == "cgroup2" {
-				return 2
-			}
-			// cgroup v1：type 为 cgroup（含 net_cls 控制器）
-			if fields[2] == "cgroup" && strings.Contains(fields[3], "net_cls") {
-				return 1
-			}
-		}
-	}
-	// 默认按 v2 处理（现代 OpenWrt 都是 v2）
-	return 2
 }
 
 // watch 对齐 procd respawn：进程退出后若非主动停止则重启。
@@ -483,9 +471,9 @@ func splitArgs(s string) []string {
 
 // lineWriter 把字节流按行喂给 logger.Core。
 type lineWriter struct {
-	log  *logger.Logger
-	buf  []byte
-	mu   sync.Mutex
+	log *logger.Logger
+	buf []byte
+	mu  sync.Mutex
 }
 
 func newLineWriter(log *logger.Logger) *lineWriter {

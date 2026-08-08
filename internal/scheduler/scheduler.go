@@ -67,7 +67,8 @@ func (s *Scheduler) Reload(cfg *config.Config) {
 	s.mu.Unlock()
 
 	// 定时重启（对齐 proxy.init:134-138）
-	if cfg.Config.ScheduledRestart && cfg.Config.ScheduledRestartCron != "" {
+	// 仅当总开关「启用」打开时，定时重启才会生效；未启用时即使勾选了定时重启也不应触发。
+	if cfg.Config.Enabled && cfg.Config.ScheduledRestart && cfg.Config.ScheduledRestartCron != "" {
 		cron := cfg.Config.ScheduledRestartCron
 		mgr := s.manager
 		s.add("restart", cron, func() {

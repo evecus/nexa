@@ -11,19 +11,20 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/nexa-proxy/nexa/internal/cgroupsupport"
 	"github.com/nexa-proxy/nexa/internal/config"
 )
 
 // Model 渲染模板所需的数据。
 type Model struct {
-	DnsHijackNFProto   []string
-	ProxyNFProto       []string
-	ReservedIP         []string
-	ReservedIP6        []string
-	LanInboundDevice   []string
-	ProxyDport         []string // 形如 "tcp . 0-65535"
-	BypassDscp         []string
-	BypassFwmark       []Fwmark
+	DnsHijackNFProto []string
+	ProxyNFProto     []string
+	ReservedIP       []string
+	ReservedIP6      []string
+	LanInboundDevice []string
+	ProxyDport       []string // 形如 "tcp . 0-65535"
+	BypassDscp       []string
+	BypassFwmark     []Fwmark
 
 	RouterProxy          bool
 	RouterAccessControls []AccessControlView
@@ -47,20 +48,20 @@ type Model struct {
 	CgroupName     string
 	CoreGID        string // 核心进程的 GID，用于 BypassGid
 
-	BypassCgroup       bool
-	BypassGid          bool
-	BypassMark         bool
-	BypassMarkValues   []string
+	BypassCgroup     bool
+	BypassGid        bool
+	BypassMark       bool
+	BypassMarkValues []string
 
-	TproxyFwMark   string
-	TproxyFwMask   string
-	TproxyFwUmask  string
-	TunFwMark      string
-	TunFwMask      string
-	TunFwUmask     string
+	TproxyFwMark  string
+	TproxyFwMask  string
+	TproxyFwUmask string
+	TunFwMark     string
+	TunFwMask     string
+	TunFwUmask    string
 
-	BypassChinaMainlandIP   bool
-	BypassChinaMainlandIP6  bool
+	BypassChinaMainlandIP  bool
+	BypassChinaMainlandIP6 bool
 
 	// ChinaIPElements / ChinaIP6Elements：bypass 开启时从 geoip 文件提取的 elements 列表，
 	// 注入到 proxy table 的 china_ip / china_ip6 集合，修复原 geoip 文件 table 名（momo）与
@@ -158,8 +159,8 @@ func Build(cfg *config.Config, lanInboundDevice []string, cgroupsVersion int) *M
 		CgroupID:               cfg.Routing.CgroupID,
 		CgroupName:             cfg.Routing.CgroupName,
 		CoreGID:                lookupCoreGID(),
-		BypassCgroup:           p.BypassCgroup,
-		BypassGid:              p.BypassGid,
+		BypassCgroup:           p.BypassCgroup && cgroupsVersion != int(cgroupsupport.None),
+		BypassGid:              p.BypassGid || cgroupsVersion == int(cgroupsupport.None),
 		BypassMark:             p.BypassMark,
 		BypassMarkValues:       p.BypassMarkValues,
 		TproxyFwMark:           cfg.Routing.TproxyFwMark,
@@ -168,12 +169,12 @@ func Build(cfg *config.Config, lanInboundDevice []string, cgroupsVersion int) *M
 		TunFwMark:              cfg.Routing.TunFwMark,
 		TunFwMask:              cfg.Routing.TunFwMask,
 		TunFwUmask:             umask(cfg.Routing.TunFwMask),
-		BypassChinaMainlandIP:    p.BypassChinaMainlandIP,
-		BypassChinaMainlandIP6:   p.BypassChinaMainlandIP6,
-		DnsHijackNFProtoHas4:     p.IPv4DnsHijack,
-		DnsHijackNFProtoHas6:     p.IPv6DnsHijack,
-		ProxyNFProtoHas4:         p.IPv4Proxy,
-		ProxyNFProtoHas6:         p.IPv6Proxy,
+		BypassChinaMainlandIP:  p.BypassChinaMainlandIP,
+		BypassChinaMainlandIP6: p.BypassChinaMainlandIP6,
+		DnsHijackNFProtoHas4:   p.IPv4DnsHijack,
+		DnsHijackNFProtoHas6:   p.IPv6DnsHijack,
+		ProxyNFProtoHas4:       p.IPv4Proxy,
+		ProxyNFProtoHas6:       p.IPv6Proxy,
 	}
 }
 
@@ -289,12 +290,12 @@ func splitSpace(s string) []string {
 // Render 渲染完整 nft 规则。
 func Render(m *Model) (string, error) {
 	tmpl, err := template.New("hijack").Funcs(template.FuncMap{
-		"join":     func(sep string, arr []string) string { return strings.Join(arr, sep) },
-		"qjoin":    qjoin,
-		"clen":     func(s string) int { return len(strings.Split(s, "/")) },
-		"hasLen":   func(arr []string, n int) bool { return len(arr) > 0 },
-		"lenGt0":   func(arr []string) bool { return len(arr) > 0 },
-		"lenEq0":   func(arr []string) bool { return len(arr) == 0 },
+		"join":   func(sep string, arr []string) string { return strings.Join(arr, sep) },
+		"qjoin":  qjoin,
+		"clen":   func(s string) int { return len(strings.Split(s, "/")) },
+		"hasLen": func(arr []string, n int) bool { return len(arr) > 0 },
+		"lenGt0": func(arr []string) bool { return len(arr) > 0 },
+		"lenEq0": func(arr []string) bool { return len(arr) == 0 },
 		"quoteArr": func(arr []string) []string {
 			out := make([]string, 0, len(arr))
 			for _, s := range arr {

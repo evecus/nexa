@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nexa-proxy/nexa/internal/cgroupsupport"
 	"github.com/nexa-proxy/nexa/internal/config"
 	"github.com/nexa-proxy/nexa/internal/logger"
 	"github.com/nexa-proxy/nexa/internal/nfttemplate"
@@ -100,8 +101,14 @@ func (m *Manager) Apply(cfg *config.Config) error {
 		run("ip", "-6", "route", "add", p.FakeIP6Range, "dev", r.DummyDevice)
 	}
 
-	// nft 劫持规则（对齐 proxy.init:236-241）
+	// 流量劫持规则：优先 nftables（fw4 已安装且运行），否则回退 iptables（对齐 proxy.init:236-241）。
 	lanDevs := resolveLanDevices(p.LanInboundInterface)
+	backend := detectBackend()
+	m.log.App("代理", "检测到防火墙后端："+backend.String()+"。")
+	if backend == BackendIptables {
+		return m.applyIptables(cfg, lanDevs)
+	}
+
 	model := nfttemplate.Build(cfg, lanDevs, cgroupsVersion())
 	// bypass 大陆 IP 时，从 geoip 文件提取 elements 注入 proxy table 集合。
 	// 原 geoip 文件 table 名为 momo，与 proxy table 不匹配，此处直接注入 elements 修正。
@@ -154,6 +161,10 @@ func (m *Manager) FirewallInclude(cfg *config.Config) {
 	if p.TunDevice == "" {
 		return
 	}
+	// iptables 回退：TUN 放行规则已经在 applyIptables 中通过 filter INPUT/FORWARD 完成，这里直接跳过。
+	if detectBackend() == BackendIptables {
+		return
+	}
 	// 检测可用的防火墙表：优先 fw4（OpenWrt），回退 filter（普通 Linux）
 	fwTable := "fw4"
 	if out, err := exec.Command("nft", "list", "table", "inet", "fw4").CombinedOutput(); err != nil {
@@ -198,6 +209,10 @@ func (m *Manager) Cleanup(cfg *config.Config) {
 	deleteFwRulesByComment("fw4", "forward")
 	deleteFwRulesByComment("filter", "input")
 	deleteFwRulesByComment("filter", "forward")
+
+	// 清理 iptables 回退规则（无论上次用的是哪个后端，都尝试清理一次，保证幂等；
+	// 命令不存在或规则不存在时静默跳过）。
+	m.cleanupIptables(cfg)
 
 	// 恢复 bridge-nf-call（仅当标志文件存在且系统有网桥时）
 	if hasBridge() {
@@ -264,21 +279,11 @@ func extractHandlesForComment(jsonOut []byte, table, chain, comment string) []ui
 
 // ── helpers ──────────────────────────────────────────────
 
-// cgroupsVersion 对齐 include.uc get_cgroups_version()：mount 含 type cgroup → v1，否则 v2。
+// cgroupsVersion 返回系统实际支持的 cgroup 版本（0=不支持，1=v1，2=v2）。
+// 委托给 cgroupsupport 包，保证和 core.go / nfttemplate 使用的判断标准完全一致
+// （都要求挂载点真实可写，而不仅仅是「存在某个类型的挂载」）。
 func cgroupsVersion() int {
-	f, err := os.Open("/proc/mounts")
-	if err != nil {
-		return 2
-	}
-	defer f.Close()
-	sc := bufio.NewScanner(f)
-	for sc.Scan() {
-		fields := strings.Fields(sc.Text())
-		if len(fields) >= 3 && fields[2] == "cgroup" {
-			return 1
-		}
-	}
-	return 2
+	return int(cgroupsupport.Detect())
 }
 
 func isModuleLoaded(name string) bool {
