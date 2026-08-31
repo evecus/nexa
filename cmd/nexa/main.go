@@ -24,6 +24,7 @@ import (
 	"github.com/nexa-proxy/nexa/internal/api"
 	"github.com/nexa-proxy/nexa/internal/app"
 	"github.com/nexa-proxy/nexa/internal/auth"
+	"github.com/nexa-proxy/nexa/internal/core"
 	"github.com/nexa-proxy/nexa/internal/paths"
 	"github.com/nexa-proxy/nexa/web"
 )
@@ -138,6 +139,14 @@ func runOn() {
 	// 只要磁盘里有配置就无条件下发防火墙规则和策略路由。
 	// 先清理旧规则，避免残留导致重复插入（对齐 Apply 前的 cleanup 惯例）。
 	a.Net.Cleanup(cfg)
+
+	// 确保 nexa 系统组存在：GID 绕过规则（nft meta skgid / iptables --gid-owner）
+	// 需要查到 nexa 组的 GID 才会下发。常驻模式由 core.Start 创建该组，
+	// on/off 单独使用时不经过 core，故这里显式建一次（幂等：已存在则只查找不重复创建）。
+	// 否则从未常驻启动过的系统上 on 命令会漏发 GID 绕过规则，导致核心进程出站流量回环。
+	if _, err := core.EnsureNexaGroup(); err != nil {
+		log.Printf("警告：创建 nexa 组失败（%v），GID 绕过规则将不下发。", err)
+	}
 
 	if err := a.Net.Apply(cfg); err != nil {
 		log.Fatalf("配置防火墙规则和策略路由失败: %v", err)
