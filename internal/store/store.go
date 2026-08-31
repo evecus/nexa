@@ -1,29 +1,46 @@
-// Package store 用 SQLite 持久化 nexa 配置，schema 对齐 UCI sections。
+// Package store 用 bbolt 持久化 nexa 配置，schema 对齐 UCI sections。
+//
+// 历史上这里使用 modernc.org/sqlite（纯 Go SQLite），但其依赖 modernc.org/libc
+// 不支持 MIPS/mipsle/mips64/mips64le 架构（build constraints 排除了所有 MIPS），
+// 导致 OpenWrt 路由器目标无法编译。bbolt 是纯 Go 单文件 KV 存储，支持所有
+// GOARCH（含全部 MIPS 变体），ACID，足以承载本包极简的存储需求。
 package store
 
 import (
-	"database/sql"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
+	"time"
 
 	"github.com/nexa-proxy/nexa/internal/config"
 	"github.com/nexa-proxy/nexa/internal/paths"
+	bolt "go.etcd.io/bbolt"
+)
 
-	_ "modernc.org/sqlite"
+var (
+	bucketMeta  = []byte("meta")
+	bucketConf  = []byte("config_json")
+	confRowID   = []byte("1")
+	metaVersion = []byte("version")
 )
 
 type Store struct {
-	db *sql.DB
+	db *bolt.DB
 }
 
-// New 打开/创建数据库并初始化 schema。
+// New 打开/创建数据库并初始化 schema（bucket）。
 func New() (*Store, error) {
-	db, err := sql.Open("sqlite", paths.DBPath)
+	if err := os.MkdirAll(filepath.Dir(paths.DBPath), 0755); err != nil {
+		return nil, err
+	}
+	db, err := bolt.Open(paths.DBPath, 0600, &bolt.Options{Timeout: time.Second})
 	if err != nil {
 		return nil, err
 	}
 	s := &Store{db: db}
 	if err := s.init(); err != nil {
+		_ = db.Close()
 		return nil, err
 	}
 	return s, nil
@@ -32,36 +49,37 @@ func New() (*Store, error) {
 func (s *Store) Close() error { return s.db.Close() }
 
 func (s *Store) init() error {
-	schema := `
-CREATE TABLE IF NOT EXISTS meta (
-	key   TEXT PRIMARY KEY,
-	value TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS config_json (
-	id    INTEGER PRIMARY KEY CHECK (id = 1),
-	value TEXT NOT NULL
-);
-`
-	_, err := s.db.Exec(schema)
-	return err
+	return s.db.Update(func(tx *bolt.Tx) error {
+		for _, b := range [][]byte{bucketMeta, bucketConf} {
+			if _, err := tx.CreateBucketIfNotExists(b); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 // Load 读取配置；不存在则写入默认值并返回。
 func (s *Store) Load() (*config.Config, error) {
-	var raw string
-	err := s.db.QueryRow(`SELECT value FROM config_json WHERE id = 1`).Scan(&raw)
-	if err == sql.ErrNoRows {
+	var raw []byte
+	err := s.db.View(func(tx *bolt.Tx) error {
+		if b := tx.Bucket(bucketConf); b != nil {
+			raw = b.Get(confRowID)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if raw == nil {
 		def := config.Default()
 		if e := s.Save(def); e != nil {
 			return nil, e
 		}
 		return def, nil
 	}
-	if err != nil {
-		return nil, err
-	}
 	var c config.Config
-	if err := json.Unmarshal([]byte(raw), &c); err != nil {
+	if err := json.Unmarshal(raw, &c); err != nil {
 		return nil, err
 	}
 	return &c, nil
@@ -73,18 +91,26 @@ func (s *Store) Save(c *config.Config) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec(
-		`INSERT INTO config_json(id, value) VALUES(1, ?)
-		 ON CONFLICT(id) DO UPDATE SET value = excluded.value`,
-		string(raw),
-	)
-	return err
+	return s.db.Update(func(tx *bolt.Tx) error {
+		b, err := tx.CreateBucketIfNotExists(bucketConf)
+		if err != nil {
+			return err
+		}
+		return b.Put(confRowID, raw)
+	})
 }
 
 // Version 返回 nexa 版本。
 func (s *Store) Version() string {
 	var v string
-	_ = s.db.QueryRow(`SELECT value FROM meta WHERE key = 'version'`).Scan(&v)
+	_ = s.db.View(func(tx *bolt.Tx) error {
+		if b := tx.Bucket(bucketMeta); b != nil {
+			if val := b.Get(metaVersion); val != nil {
+				v = string(val)
+			}
+		}
+		return nil
+	})
 	if v == "" {
 		v = "1.0.0"
 	}
@@ -93,18 +119,16 @@ func (s *Store) Version() string {
 
 // SetVersion 写入版本。
 func (s *Store) SetVersion(v string) error {
-	_, err := s.db.Exec(
-		`INSERT INTO meta(key, value) VALUES('version', ?)
-		 ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-		v,
-	)
-	if err == nil {
+	err := s.db.Update(func(tx *bolt.Tx) error {
+		b, err := tx.CreateBucketIfNotExists(bucketMeta)
+		if err != nil {
+			return err
+		}
+		if err := b.Put(metaVersion, []byte(v)); err != nil {
+			return err
+		}
 		// 顺便记个时间
-		_, _ = s.db.Exec(
-			`INSERT INTO meta(key, value) VALUES('version_set_at', ?)
-			 ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-			fmt.Sprintf("%d", 0),
-		)
-	}
+		return b.Put([]byte("version_set_at"), []byte(fmt.Sprintf("%d", 0)))
+	})
 	return err
 }
