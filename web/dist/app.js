@@ -395,13 +395,17 @@ route('#/app', async (c) => {
   basic.appendChild(UI.field('选择配置文件', profSel, '从「配置文件」页面上传'));
   profSel.addEventListener('change', () => local.config.profile = profSel.value);
   // 可执行文件路径 / 启动参数：与代理页候选列表同源（config.binary_list / args_list），
-  // 交互对齐「选择配置文件」的下拉；启动参数允许为空，因此始终保留空选项。
+  // 交互对齐「选择配置文件」的下拉；可执行文件路径必选（无空选项），
+  // 启动参数允许为空，因此保留空选项。
   if (!local.config.binary_list) local.config.binary_list = ['sing-box', 'mihomo', 'xray'];
   if (!local.config.args_list) local.config.args_list = ['run -D ' + runDir, '-d ' + runDir];
   const binSel = UI.el('select', {});
-  binSel.appendChild(UI.el('option', { value: '' }, '(空)'));
   local.config.binary_list.forEach(v => binSel.appendChild(UI.el('option', { value: v }, v)));
-  binSel.value = local.config.run_binary || '';
+  // run_binary 为空时（异常数据）回退选中第一个候选，保证下拉无空值状态
+  if (!local.config.run_binary || !local.config.binary_list.includes(local.config.run_binary)) {
+    local.config.run_binary = local.config.binary_list[0];
+  }
+  binSel.value = local.config.run_binary;
   binSel.addEventListener('change', () => local.config.run_binary = binSel.value);
   basic.appendChild(UI.field('可执行文件路径', binSel, '候选项在「代理配置 → 基本设置」中维护'));
   const argsSel = UI.el('select', {});
