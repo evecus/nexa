@@ -115,6 +115,7 @@ function renderLayout() {
   NAV.forEach(n => {
     const item = UI.el('div', {
       class: 'nav-item' + (location.hash === n.hash ? ' active' : ''),
+      'data-hash': n.hash,
       onclick: () => { location.hash = n.hash; document.querySelector('.sidebar').classList.remove('open'); overlay.classList.remove('open'); }
     }, UI.el('span', { class: 'ico' }, n.icon), n.name);
     sidebar.appendChild(item);
@@ -159,8 +160,11 @@ async function router() {
   const navItem = NAV.find(n => n.hash === hash);
   const title = document.getElementById('page-title');
   if (title && navItem) title.textContent = navItem.name;
-  // 高亮当前导航
+  // 高亮当前导航：先清空再按 data-hash 重新标记（未知 hash 回退到启动配置）
+  const effHash = navItem ? hash : '#/app';
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  const activeItem = document.querySelector('.nav-item[data-hash="' + effHash + '"]');
+  if (activeItem) activeItem.classList.add('active');
   try {
     await fn(document.getElementById('content'));
   } catch (e) {
@@ -361,7 +365,7 @@ route('#/app', async (c) => {
   const statusCard = UI.el('div', { class: 'card' });
   statusCard.appendChild(UI.el('div', { class: 'card-title' }, '状态'));
   const sRow = UI.el('div', { class: 'grid-3' },
-    UI.field('面板版本', UI.el('input', { value: '1.0.0', readonly: '' })),
+    UI.field('面板版本', UI.el('input', { value: ver.binary || 'dev', readonly: '' })),
     UI.field('运行状态', UI.el('div', { id: 'app-status-box' })),
     UI.field('操作', UI.el('div', { class: 'row-gap' },
       UI.el('button', { class: 'btn btn-outline btn-sm', onclick: async () => { await API.post('/api/restart-core'); UI.toast('已重启核心', 'ok'); } }, '重启核心'),
@@ -406,9 +410,6 @@ route('#/app', async (c) => {
   argsSel.value = local.config.run_args || '';
   argsSel.addEventListener('change', () => local.config.run_args = argsSel.value);
   basic.appendChild(UI.field('启动参数', argsSel, '候选项在「代理配置 → 基本设置」中维护'));
-  const runDirI = UI.input('text', local.config.run_dir, '留空使用默认（数据目录/run），例：/root/nexa');
-  runDirI.addEventListener('input', () => local.config.run_dir = runDirI.value);
-  basic.appendChild(UI.field('运行目录', runDirI));
   const delayI = UI.input('number', local.config.start_delay, '0');
   delayI.addEventListener('input', () => local.config.start_delay = +delayI.value || 0);
   basic.appendChild(UI.field('延迟启动（秒）', delayI));
