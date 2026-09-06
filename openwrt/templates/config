@@ -1,0 +1,3 @@
+config nexa 'main'
+	option enabled '0'
+	option port '9990'

@@ -1,0 +1,15 @@
+{
+    "luci-app-nexa": {
+        "description": "Grant access to Nexa configurations",
+        "read": {
+            "uci": [ "nexa" ],
+            "ubus": {
+                "rc": [ "*" ],
+                "luci.nexa": [ "*" ]
+            }
+        },
+        "write": {
+            "uci": [ "nexa" ]
+        }
+    }
+}

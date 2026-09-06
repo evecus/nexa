@@ -1,0 +1,967 @@
+'use strict';
+// nexa Web 面板 SPA：原生 JS，无框架依赖，5 页面对齐原 LuCI 视图 + 登录。
+
+const API = (() => {
+  const token = () => localStorage.getItem('nexa_token');
+  async function req(path, opts = {}) {
+    opts.headers = opts.headers || {};
+    if (token()) opts.headers['Authorization'] = 'Bearer ' + token();
+    if (opts.body && typeof opts.body !== 'string' && !(opts.body instanceof FormData)) {
+      opts.headers['Content-Type'] = 'application/json';
+      opts.body = JSON.stringify(opts.body);
+    }
+    const r = await fetch(path, opts);
+    if (r.status === 401) { location.hash = '#/login'; throw new Error('未授权'); }
+    const ct = r.headers.get('Content-Type') || '';
+    if (ct.includes('application/json')) return r.json();
+    return r.text();
+  }
+  return {
+    get: (p) => req(p),
+    post: (p, b) => req(p, { method: 'POST', body: b }),
+    put: (p, b) => req(p, { method: 'PUT', body: b }),
+    del: (p) => req(p, { method: 'DELETE' }),
+    raw: (p, opts = {}) => {
+      opts.headers = opts.headers || {};
+      const t = localStorage.getItem('nexa_token');
+      if (t) opts.headers['Authorization'] = 'Bearer ' + t;
+      return fetch(p, opts);
+    }, // 用于下载等
+  };
+})();
+
+const UI = {
+  toast(msg, type = '') {
+    const t = document.createElement('div');
+    t.className = 'toast ' + type;
+    t.textContent = msg;
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 2600);
+  },
+  el(tag, attrs = {}, ...children) {
+    const e = document.createElement(tag);
+    for (const k in attrs) {
+      if (k === 'class') e.className = attrs[k];
+      else if (k === 'html') e.innerHTML = attrs[k];
+      else if (k.startsWith('on')) e.addEventListener(k.slice(2).toLowerCase(), attrs[k]);
+      else e.setAttribute(k, attrs[k]);
+    }
+    for (const c of children) {
+      if (c == null) continue;
+      e.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+    }
+    return e;
+  },
+  toggle(checked, onchange) {
+    const i = UI.el('input', { type: 'checkbox' });
+    if (checked) i.checked = true;
+    if (onchange) i.addEventListener('change', () => onchange(i.checked));
+    return UI.el('label', { class: 'toggle' }, i, UI.el('span', { class: 'slider' }));
+  },
+  field(label, inputEl, hint) {
+    const f = UI.el('div', { class: 'field' });
+    f.appendChild(UI.el('label', {}, label));
+    f.appendChild(inputEl);
+    if (hint) f.appendChild(UI.el('div', { class: 'hint' }, hint));
+    return f;
+  },
+  input(type, val, placeholder) {
+    return UI.el('input', { type, value: val || '', placeholder: placeholder || '' });
+  },
+};
+
+function copyText(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(() => UI.toast('已复制', 'ok')).catch(() => fallbackCopy(text));
+  } else {
+    fallbackCopy(text);
+  }
+}
+function fallbackCopy(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy') ? UI.toast('已复制', 'ok') : UI.toast('复制失败', 'err'); }
+  catch (e) { UI.toast('复制失败', 'err'); }
+  ta.remove();
+}
+
+// ── 路由 ─────────────────────────────
+const routes = {};
+function route(path, fn) { routes[path] = fn; }
+
+const NAV = [
+  { hash: '#/app',     name: '启动配置', icon: '◆' },
+  { hash: '#/profile', name: '配置文件', icon: '▦' },
+  { hash: '#/proxy',   name: '代理配置', icon: '◈' },
+  { hash: '#/editor',  name: '编辑器',   icon: '✎' },
+  { hash: '#/log',     name: '日志',     icon: '☰' },
+  { hash: '#/settings', name: '设置',   icon: '⚙' },
+];
+
+function renderLayout() {
+  const app = document.getElementById('app');
+  app.innerHTML = '';
+  const layout = UI.el('div', { class: 'layout' });
+  const overlay = UI.el('div', { class: 'sidebar-overlay', onclick: () => { document.querySelector('.sidebar').classList.remove('open'); overlay.classList.remove('open'); } });
+  const sidebar = UI.el('div', { class: 'sidebar' });
+  sidebar.appendChild(UI.el('div', { class: 'logo' },
+    UI.el('div', { class: 'dot' }, 'N'),
+    UI.el('div', { class: 'name' }, 'Nexa')
+  ));
+  NAV.forEach(n => {
+    const item = UI.el('div', {
+      class: 'nav-item' + (location.hash === n.hash ? ' active' : ''),
+      onclick: () => { location.hash = n.hash; document.querySelector('.sidebar').classList.remove('open'); overlay.classList.remove('open'); }
+    }, UI.el('span', { class: 'ico' }, n.icon), n.name);
+    sidebar.appendChild(item);
+  });
+  sidebar.appendChild(UI.el('div', { class: 'spacer' }));
+  sidebar.appendChild(UI.el('div', { class: 'nav-item', onclick: () => {
+    localStorage.removeItem('nexa_token'); location.hash = '#/login';
+  } }, UI.el('span', { class: 'ico' }, '⏻'), '退出'));
+
+  const main = UI.el('div', { class: 'main' });
+  const menuBtn = UI.el('button', { class: 'btn btn-outline menu-btn', onclick: () => { document.querySelector('.sidebar').classList.toggle('open'); overlay.classList.toggle('open'); } }, '☰');
+  const topbar = UI.el('div', { class: 'topbar' },
+    UI.el('div', { class: 'title', id: 'page-title' }, 'Nexa'),
+    UI.el('div', { class: 'right', id: 'topbar-right' })
+  );
+  topbar.insertBefore(menuBtn, topbar.firstChild);
+  const content = UI.el('div', { class: 'content', id: 'content' });
+  main.appendChild(topbar);
+  main.appendChild(content);
+  layout.appendChild(overlay);
+  layout.appendChild(sidebar);
+  layout.appendChild(main);
+  app.appendChild(layout);
+}
+
+async function router() {
+  if (!localStorage.getItem('nexa_token')) {
+    // 本地没有 token 不代表一定要登录：服务端可能已开启"无验证访问"。
+    // 直接探测一个受保护接口，401 才说明确实需要登录；其他情况（如 200）
+    // 说明服务端已放行，此时不应再把用户强制赶到登录页。
+    const noAuth = await checkNoAuthAllowed();
+    if (!noAuth && location.hash !== '#/login') { location.hash = '#/login'; }
+  }
+  const hash = location.hash || '#/app';
+  if (hash === '#/login') {
+    document.getElementById('app').innerHTML = '';
+    renderLogin();
+    return;
+  }
+  if (!document.querySelector('.layout')) renderLayout();
+  const fn = routes[hash] || routes['#/app'];
+  const navItem = NAV.find(n => n.hash === hash);
+  const title = document.getElementById('page-title');
+  if (title && navItem) title.textContent = navItem.name;
+  // 高亮当前导航
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  try {
+    await fn(document.getElementById('content'));
+  } catch (e) {
+    document.getElementById('content').innerHTML = '<div class="card">加载失败：' + (e.message || e) + '</div>';
+  }
+  // 顶部状态
+  renderTopbar();
+}
+
+async function renderTopbar() {
+  const right = document.getElementById('topbar-right');
+  if (!right) return;
+  right.innerHTML = '';
+  try {
+    const st = await API.get('/api/status');
+    right.appendChild(UI.el('span', { class: 'status-pill ' + (st.running ? 'running' : 'stopped') },
+      UI.el('span', { class: 'dot' }), st.running ? '运行中' : '未运行'));
+  } catch (e) {
+    right.appendChild(UI.el('span', { class: 'status-pill stopped' }, UI.el('span', { class: 'dot' }), '未知'));
+  }
+}
+
+window.addEventListener('hashchange', router);
+
+// 探测服务端"无验证访问"是否开启。用原生 fetch 而非 API.get，
+// 避免其内置的 401 -> 跳转登录逻辑在这里产生死循环。
+// 短时间内缓存结果，避免每次路由切换都发请求。
+let _noAuthCache = null, _noAuthCacheAt = 0;
+async function checkNoAuthAllowed() {
+  const now = Date.now();
+  if (_noAuthCache !== null && now - _noAuthCacheAt < 5000) return _noAuthCache;
+  try {
+    const r = await fetch('/api/auth/no-auth');
+    _noAuthCache = r.ok;
+  } catch (e) {
+    _noAuthCache = false;
+  }
+  _noAuthCacheAt = now;
+  return _noAuthCache;
+}
+
+// ── 登录页 ───────────────────────────
+function renderLogin() {
+  const wrap = UI.el('div', { class: 'login-wrap' });
+  const card = UI.el('div', { class: 'login-card' });
+  card.appendChild(UI.el('div', { class: 'brand-dot' }, 'N'));
+  card.appendChild(UI.el('h1', {}, 'Nexa'));
+  card.appendChild(UI.el('div', { class: 'sub' }, '透明代理管理面板'));
+  const userI = UI.input('text', '', 'admin');
+  const passI = UI.input('password', '', '密码');
+  card.appendChild(UI.field('用户名', userI));
+  card.appendChild(UI.field('密码', passI));
+  const btn = UI.el('button', { class: 'btn btn-primary btn-block mt-16' }, '登录');
+  btn.addEventListener('click', async () => {
+    try {
+      const r = await API.post('/api/auth/login', { username: userI.value, password: passI.value });
+      localStorage.setItem('nexa_token', r.token);
+      location.hash = '#/app';
+    } catch (e) { UI.toast('用户名或密码错误', 'err'); }
+  });
+  passI.addEventListener('keydown', e => { if (e.key === 'Enter') btn.click(); });
+  card.appendChild(btn);
+  wrap.appendChild(card);
+  document.getElementById('app').appendChild(wrap);
+}
+
+// ── 工具：动态标签输入 ─────────────
+// options: 可选下拉列表（字符串数组），传入时会渲染一个 select 供用户从系统已检测到的候选项中挑选。
+function dynList(values, options) {
+  const wrap = UI.el('div', { class: 'dyn-list' });
+  const render = (rawVals) => {
+    // 后端可能返回 null（Go 的 nil slice 序列化为 JSON null），这里统一规整为数组，
+    // 避免 null.includes(...) / null.splice(...) 报错导致后续渲染（如"添加规则"按钮）被中断。
+    const vals = rawVals || [];
+    wrap.innerHTML = '';
+    vals.forEach((v, i) => {
+      const chip = UI.el('span', { class: 'chip' }, v,
+        UI.el('span', { class: 'x', onclick: () => { vals.splice(i, 1); render(vals); } }, '×'));
+      wrap.appendChild(chip);
+    });
+    // 下拉候选项：已选中的不再出现在下拉中
+    if (options && options.length) {
+      const sel = UI.el('select', { class: 'chip-select' });
+      sel.appendChild(UI.el('option', { value: '' }, '+ 从列表选择'));
+      let avail = 0;
+      options.forEach(opt => {
+        if (!vals.includes(opt)) {
+          sel.appendChild(UI.el('option', { value: opt }, opt));
+          avail++;
+        }
+      });
+      if (avail > 0) {
+        sel.addEventListener('change', () => {
+          if (sel.value) {
+            vals.push(sel.value);
+            render(vals);
+          }
+        });
+        wrap.appendChild(sel);
+      }
+    }
+    const addBtn = UI.el('button', { class: 'chip-add', onclick: () => {
+      const v = prompt('输入值（逗号分隔多个）');
+      if (!v) return;
+      v.split(',').map(s => s.trim()).filter(Boolean).forEach(x => {
+        if (!vals.includes(x)) vals.push(x);
+      });
+      render(vals);
+    } }, '+ 添加');
+    wrap.appendChild(addBtn);
+  };
+  render(values);
+  return wrap;
+}
+
+// ── 工具：候选列表管理（chip 全展开） ─────────────
+// 所有候选值都以 chip 展示（默认项与用户添加项样式一致），点 × 删除，「+ 添加」输入新值。
+// active 为当前生效值，对应 chip 高亮；删除生效值时回调 onActiveClear 通知调用方清空引用。
+function dynPool(values, active, onActiveClear) {
+  const wrap = UI.el('div', { class: 'dyn-list' });
+  const render = () => {
+    const vals = values || [];
+    wrap.innerHTML = '';
+    vals.forEach((v, i) => {
+      const chip = UI.el('span', { class: 'chip' + (v === active ? ' chip-active' : '') }, v,
+        UI.el('span', { class: 'x', onclick: () => {
+          vals.splice(i, 1);
+          if (v === active && onActiveClear) onActiveClear();
+          render();
+        } }, '×'));
+      wrap.appendChild(chip);
+    });
+    const addBtn = UI.el('button', { class: 'chip-add', onclick: () => {
+      const v = prompt('输入值');
+      if (!v) return;
+      v.split(',').map(s => s.trim()).filter(Boolean).forEach(x => {
+        if (!vals.includes(x)) vals.push(x);
+      });
+      render();
+    } }, '+ 添加');
+    wrap.appendChild(addBtn);
+  };
+  render();
+  return wrap;
+}
+
+// ── 工具：代码编辑器（CodeMirror 5：语法高亮 + 行号 + 自动格式识别） ─────
+// lang: 'json' | 'yaml' | 'text'
+function detectLang(name) {
+  const lower = (name || '').toLowerCase();
+  if (lower.endsWith('.json')) return 'json';
+  if (lower.endsWith('.yaml') || lower.endsWith('.yml')) return 'yaml';
+  // 无扩展名时尝试根据首字符检测
+  return '';
+}
+// 内容嗅探：首字符为 { 或 [ 判定 JSON，否则 YAML（sing-box=JSON，clash/mihomo=YAML）
+function sniffLang(text) {
+  const t = (text || '').trim();
+  if (t[0] === '{' || t[0] === '[') return 'json';
+  return 'yaml';
+}
+function cmMode(lang) {
+  if (lang === 'json') return { name: 'javascript', json: true };
+  if (lang === 'yaml') return 'yaml';
+  return 'null';
+}
+function codeEditor(initialLang) {
+  const wrap = UI.el('div', { class: 'code-editor cm-host' });
+  const cm = CodeMirror(wrap, {
+    value: '',
+    mode: cmMode(initialLang || 'text'),
+    lineNumbers: true,
+    lineWrapping: false,
+    indentUnit: 2,
+    tabSize: 2,
+    smartIndent: false,
+    viewportMargin: Infinity,
+  });
+  cm.setSize('100%', '100%');
+
+  return {
+    el: wrap,
+    get: () => cm.getValue(),
+    set: (v) => cm.setValue(v || ''),
+    setLang: (l) => cm.setOption('mode', cmMode(l)),
+    refresh: () => cm.refresh(),
+  };
+}
+
+// ── 页面：插件配置 (app.js) ─────────
+route('#/app', async (c) => {
+  const [cfg, profiles, ver, pth] = await Promise.all([API.get('/api/config'), API.get('/api/profiles'), API.get('/api/version'), API.get('/api/paths').catch(() => ({}))]);
+  const runDir = pth.run_dir || '/etc/nexa/run';
+  const local = JSON.parse(JSON.stringify(cfg));
+
+  c.innerHTML = '';
+  // 状态卡片
+  const statusCard = UI.el('div', { class: 'card' });
+  statusCard.appendChild(UI.el('div', { class: 'card-title' }, '状态'));
+  const sRow = UI.el('div', { class: 'grid-3' },
+    UI.field('面板版本', UI.el('input', { value: '1.0.0', readonly: '' })),
+    UI.field('运行状态', UI.el('div', { id: 'app-status-box' })),
+    UI.field('操作', UI.el('div', { class: 'row-gap' },
+      UI.el('button', { class: 'btn btn-outline btn-sm', onclick: async () => { await API.post('/api/restart-core'); UI.toast('已重启核心', 'ok'); } }, '重启核心'),
+      UI.el('button', { class: 'btn btn-danger btn-sm', onclick: async () => { await API.post('/api/restart'); UI.toast('已重启', 'ok'); } }, '重启服务'),
+      UI.el('button', { class: 'btn btn-success btn-sm', onclick: async () => {
+        try {
+          const full = await API.get('/api/config');
+          const port = full.proxy.ui_port || '9090';
+          const path = (full.proxy.ui_path || 'ui').replace(/^\/+|\/+$/g, '');
+          const host = location.hostname;
+          window.open('http://' + host + ':' + port + '/' + path + '/', '_blank');
+        } catch (e) { UI.toast('获取配置失败', 'err'); }
+      } }, '打开UI面板')
+    ))
+  );
+  statusCard.appendChild(sRow);
+  c.appendChild(statusCard);
+
+  // 基本配置
+  const basic = UI.el('div', { class: 'card' });
+  basic.appendChild(UI.el('div', { class: 'card-title' }, '基本配置'));
+  const profSel = UI.el('select', {});
+  profSel.appendChild(UI.el('option', { value: '' }, '-- 请选择 --'));
+  profiles.forEach(p => profSel.appendChild(UI.el('option', { value: p.name }, p.name)));
+  profSel.value = local.config.profile || '';
+  basic.appendChild(UI.field('启用', UI.toggle(local.config.enabled, v => local.config.enabled = v)));
+  basic.appendChild(UI.field('选择配置文件', profSel, '从「配置文件」页面上传'));
+  profSel.addEventListener('change', () => local.config.profile = profSel.value);
+  // 可执行文件路径 / 启动参数：与代理页候选列表同源（config.binary_list / args_list），
+  // 交互对齐「选择配置文件」的下拉；启动参数允许为空，因此始终保留空选项。
+  if (!local.config.binary_list) local.config.binary_list = ['sing-box', 'mihomo', 'xray'];
+  if (!local.config.args_list) local.config.args_list = ['run -D ' + runDir, '-d ' + runDir];
+  const binSel = UI.el('select', {});
+  binSel.appendChild(UI.el('option', { value: '' }, '(空)'));
+  local.config.binary_list.forEach(v => binSel.appendChild(UI.el('option', { value: v }, v)));
+  binSel.value = local.config.run_binary || '';
+  binSel.addEventListener('change', () => local.config.run_binary = binSel.value);
+  basic.appendChild(UI.field('可执行文件路径', binSel, '候选项在「代理配置 → 基本设置」中维护'));
+  const argsSel = UI.el('select', {});
+  argsSel.appendChild(UI.el('option', { value: '' }, '(空)'));
+  local.config.args_list.forEach(v => argsSel.appendChild(UI.el('option', { value: v }, v)));
+  argsSel.value = local.config.run_args || '';
+  argsSel.addEventListener('change', () => local.config.run_args = argsSel.value);
+  basic.appendChild(UI.field('启动参数', argsSel, '候选项在「代理配置 → 基本设置」中维护'));
+  const runDirI = UI.input('text', local.config.run_dir, '留空使用默认（数据目录/run），例：/root/nexa');
+  runDirI.addEventListener('input', () => local.config.run_dir = runDirI.value);
+  basic.appendChild(UI.field('运行目录', runDirI));
+  const delayI = UI.input('number', local.config.start_delay, '0');
+  delayI.addEventListener('input', () => local.config.start_delay = +delayI.value || 0);
+  basic.appendChild(UI.field('延迟启动（秒）', delayI));
+  basic.appendChild(UI.field('定时重启', UI.toggle(local.config.scheduled_restart, v => local.config.scheduled_restart = v)));
+  const cronI = UI.input('text', local.config.scheduled_restart_cron, '0 3 * * *');
+  cronI.addEventListener('input', () => local.config.scheduled_restart_cron = cronI.value);
+  basic.appendChild(UI.field('定时重启 Cron 表达式', cronI));
+  c.appendChild(basic);
+
+  // 保存按钮
+  const saveBar = UI.el('div', { class: 'flex-between' });
+  const actions = UI.el('div', { class: 'right-actions' });
+  const saveOnlyBtn = UI.el('button', { class: 'btn btn-outline' }, '保存');
+  saveOnlyBtn.addEventListener('click', async () => {
+    saveOnlyBtn.disabled = true; saveOnlyBtn.textContent = '保存中...';
+    try {
+      await API.put('/api/config', local);
+      UI.toast('已保存', 'ok');
+    } catch (e) { UI.toast('保存失败：' + e.message, 'err'); }
+    saveOnlyBtn.disabled = false; saveOnlyBtn.textContent = '保存';
+  });
+  const saveBtn = UI.el('button', { class: 'btn btn-primary' }, '保存并应用');
+  saveBtn.addEventListener('click', async () => {
+    saveBtn.disabled = true; saveBtn.textContent = '应用中...';
+    try {
+      await API.post('/api/config/apply', local);
+      UI.toast('已保存并应用，正在刷新...', 'ok');
+      setTimeout(() => location.reload(), 600);
+    } catch (e) { UI.toast('保存失败：' + e.message, 'err'); saveBtn.disabled = false; saveBtn.textContent = '保存并应用'; }
+  });
+  actions.appendChild(saveOnlyBtn);
+  actions.appendChild(saveBtn);
+  saveBar.appendChild(actions);
+  c.appendChild(saveBar);
+
+  // 更新状态
+  (async () => {
+    const st = await API.get('/api/status');
+    const box = document.getElementById('app-status-box');
+    if (box) box.innerHTML = '';
+    if (box) box.appendChild(UI.el('span', { class: 'status-pill ' + (st.running ? 'running' : 'stopped') },
+      UI.el('span', { class: 'dot' }), st.running ? '运行中 (PID ' + st.pid + ')' : '未运行'));
+  })();
+});
+
+// ── 页面：配置文件 (profile.js) ─────
+route('#/profile', async (c) => {
+  const profiles = await API.get('/api/profiles');
+  c.innerHTML = '';
+  const card = UI.el('div', { class: 'card' });
+  card.appendChild(UI.el('div', { class: 'card-title' }, '配置文件列表'));
+  if (!profiles.length) {
+    card.appendChild(UI.el('div', { class: 'empty' }, '暂无配置文件，请上传'));
+  } else {
+    const tbl = UI.el('table', { class: 'table' });
+    tbl.appendChild(UI.el('tr', {},
+      UI.el('th', {}, '文件名'), UI.el('th', {}, '修改时间'), UI.el('th', {}, '大小'), UI.el('th', {}, '操作')));
+    profiles.forEach(p => {
+      const tr = UI.el('tr', {},
+        UI.el('td', {}, p.name),
+        UI.el('td', {}, new Date(p.mtime * 1000).toLocaleString('zh-CN')),
+        UI.el('td', {}, (p.size / 1024).toFixed(1) + ' KB'),
+        UI.el('td', { class: 'actions' },
+          UI.el('button', { class: 'btn btn-outline btn-sm', onclick: async () => {
+            const blob = await API.raw('/api/profiles/' + encodeURIComponent(p.name));
+            const url = URL.createObjectURL(await blob.blob());
+            const a = document.createElement('a');
+            a.href = url; a.download = p.name; a.click();
+            URL.revokeObjectURL(url);
+          } }, '下载'),
+          UI.el('button', { class: 'btn btn-outline btn-sm', onclick: async () => {
+            const nn = prompt('重命名为：', p.name);
+            if (!nn || nn.trim() === '' || nn.trim() === p.name) return;
+            const res = await API.post('/api/profiles/' + encodeURIComponent(p.name) + '/rename', { name: nn.trim() });
+            if (res && res.error) { UI.toast('重命名失败：' + res.error, 'err'); return; }
+            // 若启用中的 profile 正好被重命名，同步更新配置里的引用
+            try {
+              const cfg = await API.get('/api/config');
+              if (cfg.config && cfg.config.profile === p.name) {
+                cfg.config.profile = res.name;
+                await API.put('/api/config', cfg);
+              }
+            } catch (e) { /* 引用同步失败不阻塞重命名结果 */ }
+            UI.toast('已重命名', 'ok'); router();
+          } }, '重命名'),
+          UI.el('button', { class: 'btn btn-danger btn-sm', onclick: async () => {
+            if (!confirm('确定删除 ' + p.name + '？')) return;
+            await API.del('/api/profiles/' + encodeURIComponent(p.name));
+            UI.toast('已删除', 'ok'); router();
+          } }, '删除')
+        ));
+      tbl.appendChild(tr);
+    });
+    card.appendChild(tbl);
+  }
+  c.appendChild(card);
+
+  // 上传
+  const up = UI.el('div', { class: 'card' });
+  up.appendChild(UI.el('div', { class: 'card-title' }, '上传配置文件'));
+  const fileI = UI.el('input', { type: 'file' });
+  const upBtn = UI.el('button', { class: 'btn btn-primary' }, '上传');
+  const status = UI.el('div', { class: 'muted mt-12' });
+  upBtn.addEventListener('click', async () => {
+    const f = fileI.files[0]; if (!f) { UI.toast('请选择文件', 'err'); return; }
+    status.textContent = '上传中：' + f.name + ' ...';
+    const r = await API.raw('/api/profiles?name=' + encodeURIComponent(f.name), { method: 'POST', body: f, headers: { Authorization: 'Bearer ' + localStorage.getItem('nexa_token') } });
+    if (r.ok) { UI.toast('上传成功', 'ok'); router(); }
+    else { status.textContent = '上传失败'; UI.toast('上传失败', 'err'); }
+  });
+  up.appendChild(fileI); up.appendChild(UI.el('div', { class: 'mt-12' }, upBtn)); up.appendChild(status);
+  c.appendChild(up);
+});
+
+// ── 页面：代理配置 (proxy.js) ───────
+route('#/proxy', async (c) => {
+  // 并行加载：配置、本机标识符（用户/组/cgroup）、局域网主机（IP/IP6/MAC）
+  const [cfg, ids, hostInfo, pth] = await Promise.all([
+    API.get('/api/config'),
+    API.get('/api/identifiers'),
+    API.get('/api/hosts').catch(() => ({ ip: [], ip6: [], mac: [], list: [] })),
+    API.get('/api/paths').catch(() => ({})),
+  ]);
+  const runDir = pth.run_dir || '/etc/nexa/run';
+  const p = JSON.parse(JSON.stringify(cfg.proxy));
+  const local = { proxy: p, cfgSec: JSON.parse(JSON.stringify(cfg.config)), router: cfg.router_access_controls || [], lan: cfg.lan_access_controls || [], routing: cfg.routing, log: cfg.log };
+  const users = ids.users || [], groups = ids.groups || [], cgroups = ids.cgroups || [];
+  const hostIPs = hostInfo.ip || [], hostIP6s = hostInfo.ip6 || [], hostMACs = hostInfo.mac || [];
+  const osType = ids.os_type || 'linux';
+  const cgroupHint = osType === 'openwrt' ? '例：services/dnsmasq' : '例：system.slice/sshd.service';
+
+  c.innerHTML = '';
+  const card = UI.el('div', { class: 'card' });
+  const tabs = ['基本设置', '端口与设备', '本机代理', '局域网代理', '绕过'];
+  let active = 0;
+  const tabWrap = UI.el('div', { class: 'tabs' });
+  const body = UI.el('div', { class: 'mt-16' });
+  const renderTabs = () => {
+    tabWrap.innerHTML = '';
+    tabs.forEach((t, i) => tabWrap.appendChild(UI.el('div', { class: 'tab' + (i === active ? ' active' : ''), onclick: () => { active = i; renderTabs(); renderBody(); } }, t)));
+  };
+  const renderBody = () => {
+    body.innerHTML = '';
+    if (active === 0) renderBasic(body);
+    else if (active === 1) renderPorts(body);
+    else if (active === 2) renderRouter(body);
+    else if (active === 3) renderLan(body);
+    else if (active === 4) renderMisc(body);
+  };
+  card.appendChild(tabWrap); card.appendChild(body);
+  c.appendChild(card);
+
+  // 基本
+  function renderBasic(b) {
+    const mk = (label, key, hint) => {
+      const t = UI.toggle(p[key], v => p[key] = v);
+      return UI.el('div', { class: 'toggle-row' }, UI.el('span', { class: 'label-txt' }, label), t);
+    };
+    b.appendChild(mk('启用代理', 'enabled'));
+    b.appendChild(mk('IPv4 DNS 劫持', 'ipv4_dns_hijack'));
+    b.appendChild(mk('IPv6 DNS 劫持', 'ipv6_dns_hijack'));
+    b.appendChild(mk('IPv4 代理', 'ipv4_proxy'));
+    b.appendChild(mk('IPv6 代理', 'ipv6_proxy'));
+    b.appendChild(mk('Fake-IP Ping 劫持', 'fake_ip_ping_hijack'));
+    const tcpSel = UI.el('select', {});
+    ['redirect', 'tproxy', 'tun'].forEach(m => tcpSel.appendChild(UI.el('option', { value: m }, m)));
+    tcpSel.value = p.tcp_mode; tcpSel.addEventListener('change', () => p.tcp_mode = tcpSel.value);
+    b.appendChild(UI.field('TCP 代理模式', tcpSel));
+    const udpSel = UI.el('select', {});
+    ['redirect', 'tproxy', 'tun'].forEach(m => udpSel.appendChild(UI.el('option', { value: m }, m)));
+    udpSel.value = p.udp_mode; udpSel.addEventListener('change', () => p.udp_mode = udpSel.value);
+    b.appendChild(UI.field('UDP 代理模式', udpSel));
+    // 核心可执行文件 / 启动参数候选列表（与「启动配置」页下拉同源：config.binary_list / args_list）。
+    // null = 用户未修改过 → 注入动态默认值（参数默认值带当前运行目录实际路径）；保存后即为持久化列表。
+    if (!local.cfgSec.binary_list) local.cfgSec.binary_list = ['sing-box', 'mihomo', 'xray'];
+    if (!local.cfgSec.args_list) local.cfgSec.args_list = ['run -D ' + runDir, '-d ' + runDir];
+    b.appendChild(UI.field('可执行文件路径',
+      dynPool(local.cfgSec.binary_list, local.cfgSec.run_binary, () => local.cfgSec.run_binary = ''),
+      '默认项与自定义项一致，可删除；高亮为当前使用值'));
+    b.appendChild(UI.field('启动参数',
+      dynPool(local.cfgSec.args_list, local.cfgSec.run_args, () => local.cfgSec.run_args = ''),
+      '默认项与自定义项一致，可删除；高亮为当前使用值'));
+  }
+  // 端口
+  function renderPorts(b) {
+    const mk = (label, key, ph, hint) => {
+      const i = UI.input('text', p[key], ph); i.addEventListener('input', () => p[key] = i.value);
+      return UI.field(label, i, hint);
+    };
+    const g = UI.el('div', { class: 'grid-2' });
+    g.appendChild(mk('DNS 监听端口', 'dns_port', '例：1053', '代理核心监听 DNS 请求的端口'));
+    g.appendChild(mk('Redirect 端口', 'redir_port', '例：7892'));
+    g.appendChild(mk('TPROXY 端口', 'tproxy_port', '例：7893'));
+    g.appendChild(mk('TUN 设备名', 'tun_device', '例：tun0'));
+    g.appendChild(mk('UI 端口', 'ui_port', '例：9090'));
+    g.appendChild(mk('UI 路径', 'ui_path', '例：ui'));
+    g.appendChild(mk('Fake-IP IPv4 地址段', 'fake_ip_range', '例：198.18.0.0/15'));
+    g.appendChild(mk('Fake-IP IPv6 地址段', 'fake_ip6_range', '例：fc00::/18'));
+    b.appendChild(g);
+    const tto = UI.input('number', p.tun_timeout, '30'); tto.addEventListener('input', () => p.tun_timeout = +tto.value || 30);
+    const tin = UI.input('number', p.tun_interval, '1'); tin.addEventListener('input', () => p.tun_interval = +tin.value || 1);
+    b.appendChild(UI.el('div', { class: 'grid-2 mt-16' },
+      UI.field('TUN 设备等待超时（秒）', tto), UI.field('TUN 等待检测间隔（秒）', tin)));
+  }
+  // 本机代理
+  function renderRouter(b) {
+    b.appendChild(UI.el('div', { class: 'toggle-row' }, UI.el('span', { class: 'label-txt' }, '启用本机代理'),
+      UI.toggle(p.router_proxy, v => p.router_proxy = v)));
+    local.router.forEach((ac, idx) => b.appendChild(acCard(ac, 'router', idx, () => local.router.splice(idx, 1))));
+    const addBtn = UI.el('button', { class: 'btn btn-outline btn-sm', onclick: () => {
+      local.router.push({ id: 'r' + Date.now(), enabled: true, user: [], group: [], cgroup: [], dns: true, proxy: true });
+      renderBody();
+    } }, '+ 添加规则');
+    b.appendChild(addBtn);
+  }
+  function acCard(ac, type, idx, ondel) {
+    const card = UI.el('div', { class: 'ac-row' });
+    card.appendChild(UI.el('div', { class: 'row-head' },
+      UI.el('div', { class: 'row-gap' }, UI.toggle(ac.enabled, v => ac.enabled = v), UI.el('span', { class: 'label-txt' }, '启用')),
+      UI.el('div', { class: 'row-gap' },
+        UI.toggle(ac.dns, v => ac.dns = v), UI.el('span', { class: 'muted' }, 'DNS'),
+        UI.toggle(ac.proxy, v => ac.proxy = v), UI.el('span', { class: 'muted' }, '代理'),
+        UI.el('button', { class: 'btn btn-danger btn-sm', onclick: () => { ondel(); renderBody(); } }, '删除')
+      )
+    ));
+    if (type === 'router') {
+      card.appendChild(UI.el('div', { class: 'row-fields' },
+        UI.el('div', {}, UI.el('label', {}, '用户'), dynList(ac.user || (ac.user = []), users)),
+        UI.el('div', {}, UI.el('label', {}, '用户组'), dynList(ac.group || (ac.group = []), groups)),
+        UI.el('div', {}, UI.el('label', {}, 'CGroup'), dynList(ac.cgroup || (ac.cgroup = []), cgroups), UI.el('div', { class: 'hint' }, cgroupHint))
+      ));
+    } else {
+      card.appendChild(UI.el('div', { class: 'row-fields' },
+        UI.el('div', {}, UI.el('label', {}, 'IP'), dynList(ac.ip || (ac.ip = []), hostIPs)),
+        UI.el('div', {}, UI.el('label', {}, 'IPv6'), dynList(ac.ip6 || (ac.ip6 = []), hostIP6s)),
+        UI.el('div', {}, UI.el('label', {}, 'MAC'), dynList(ac.mac || (ac.mac = []), hostMACs))
+      ));
+    }
+    return card;
+  }
+  // 局域网代理
+  function renderLan(b) {
+    b.appendChild(UI.el('div', { class: 'toggle-row' }, UI.el('span', { class: 'label-txt' }, '启用局域网代理'),
+      UI.toggle(p.lan_proxy, v => p.lan_proxy = v)));
+    const ifaceWrap = UI.el('div', { class: 'field' });
+    ifaceWrap.appendChild(UI.el('label', {}, '入站接口（设备名，如 br-lan）'));
+    ifaceWrap.appendChild(dynList(p.lan_inbound_interface || (p.lan_inbound_interface = [])));
+    b.appendChild(ifaceWrap);
+    local.lan.forEach((ac, idx) => b.appendChild(acCard(ac, 'lan', idx, () => local.lan.splice(idx, 1))));
+    b.appendChild(UI.el('button', { class: 'btn btn-outline btn-sm', onclick: () => {
+      local.lan.push({ id: 'l' + Date.now(), enabled: true, ip: [], ip6: [], mac: [], dns: true, proxy: true });
+      renderBody();
+    } }, '+ 添加规则'));
+  }
+  // 绕过
+  function renderMisc(b) {
+    b.appendChild(UI.el('div', { class: 'section-title' }, '回环绕过'));
+    b.appendChild(UI.el('div', { class: 'toggle-row' }, UI.el('span', { class: 'label-txt' }, 'CGroup 绕过'), UI.toggle(p.bypass_cgroup, v => p.bypass_cgroup = v)));
+    b.appendChild(UI.el('div', { class: 'toggle-row' }, UI.el('span', { class: 'label-txt' }, 'GID 绕过'), UI.toggle(p.bypass_gid, v => p.bypass_gid = v)));
+    b.appendChild(UI.el('div', { class: 'toggle-row' }, UI.el('span', { class: 'label-txt' }, 'Mark 绕过'), UI.toggle(p.bypass_mark, v => p.bypass_mark = v)));
+    if (p.bypass_mark) {
+      b.appendChild(UI.el('div', { class: 'field' }, UI.el('label', {}, 'Mark 值（支持多个，如 0x1/0xff）'), dynList(p.bypass_mark_values || (p.bypass_mark_values = []))));
+    }
+    b.appendChild(UI.el('div', { class: 'section-title mt-20' }, '地址绕过'));
+    b.appendChild(UI.el('div', { class: 'toggle-row' }, UI.el('span', { class: 'label-txt' }, '绕过中国大陆 IPv4'),
+      UI.toggle(p.bypass_china_mainland_ip, v => p.bypass_china_mainland_ip = v)));
+    b.appendChild(UI.el('div', { class: 'toggle-row' }, UI.el('span', { class: 'label-txt' }, '绕过中国大陆 IPv6'),
+      UI.toggle(p.bypass_china_mainland_ip6, v => p.bypass_china_mainland_ip6 = v)));
+    b.appendChild(UI.el('div', { class: 'field' }, UI.el('label', {}, '保留 IPv4 地址段'), dynList(p.reserved_ip || (p.reserved_ip = []))));
+    b.appendChild(UI.el('div', { class: 'field' }, UI.el('label', {}, '保留 IPv6 地址段'), dynList(p.reserved_ip6 || (p.reserved_ip6 = []))));
+    b.appendChild(UI.el('div', { class: 'section-title mt-20' }, '端口与标记绕过'));
+    const g = UI.el('div', { class: 'grid-2' });
+    const tcp = UI.input('text', p.proxy_tcp_dport, '0-65535'); tcp.addEventListener('input', () => p.proxy_tcp_dport = tcp.value);
+    const udp = UI.input('text', p.proxy_udp_dport, '0-65535'); udp.addEventListener('input', () => p.proxy_udp_dport = udp.value);
+    g.appendChild(UI.field('代理 TCP 目标端口范围', tcp));
+    g.appendChild(UI.field('代理 UDP 目标端口范围', udp));
+    b.appendChild(g);
+    b.appendChild(UI.el('div', { class: 'field' }, UI.el('label', {}, '绕过 DSCP 标记'), dynList(p.bypass_dscp || (p.bypass_dscp = []))));
+    b.appendChild(UI.el('div', { class: 'field' }, UI.el('label', {}, '绕过 Fwmark 标记'), dynList(p.bypass_fwmark || (p.bypass_fwmark = []))));
+  }
+
+  renderTabs(); renderBody();
+
+  // 保存
+  const saveBar = UI.el('div', { class: 'flex-between mt-20' });
+  const actions = UI.el('div', { class: 'right-actions' });
+  const saveOnlyBtn = UI.el('button', { class: 'btn btn-outline' }, '保存');
+  saveOnlyBtn.addEventListener('click', async () => {
+    saveOnlyBtn.disabled = true; saveOnlyBtn.textContent = '保存中...';
+    try {
+      const full = await API.get('/api/config');
+      full.proxy = local.proxy;
+      full.config = local.cfgSec;
+      full.router_access_controls = local.router;
+      full.lan_access_controls = local.lan;
+      full.routing = local.routing;
+      full.log = local.log;
+      await API.put('/api/config', full);
+      UI.toast('已保存', 'ok');
+    } catch (e) { UI.toast('保存失败：' + e.message, 'err'); }
+    saveOnlyBtn.disabled = false; saveOnlyBtn.textContent = '保存';
+  });
+  const saveBtn = UI.el('button', { class: 'btn btn-primary' }, '保存并应用');
+  saveBtn.addEventListener('click', async () => {
+    saveBtn.disabled = true; saveBtn.textContent = '应用中...';
+    try {
+      const full = await API.get('/api/config');
+      full.proxy = local.proxy;
+      full.config = local.cfgSec;
+      full.router_access_controls = local.router;
+      full.lan_access_controls = local.lan;
+      full.routing = local.routing;
+      full.log = local.log;
+      await API.post('/api/config/apply', full);
+      UI.toast('已保存并应用，正在刷新...', 'ok');
+      setTimeout(() => location.reload(), 600);
+    } catch (e) { UI.toast('保存失败：' + e.message, 'err'); saveBtn.disabled = false; saveBtn.textContent = '保存并应用'; }
+  });
+  actions.appendChild(saveOnlyBtn);
+  actions.appendChild(saveBtn);
+  saveBar.appendChild(actions);
+  c.appendChild(saveBar);
+});
+
+// ── 页面：编辑器 (editor.js) ────────
+route('#/editor', async (c) => {
+  const profiles = await API.get('/api/profiles');
+  c.innerHTML = '';
+  const card = UI.el('div', { class: 'card' });
+  card.appendChild(UI.el('div', { class: 'card-title' }, '配置文件编辑器'));
+  const sel = UI.el('select', {});
+  sel.appendChild(UI.el('option', { value: '' }, '-- 选择文件 --'));
+  profiles.forEach(p => sel.appendChild(UI.el('option', { value: p.name }, p.name)));
+  // 语言自动识别：扩展名 + 内容嗅探，无需手动选择
+  const ed = codeEditor('text');
+  let current = '';
+  sel.addEventListener('change', async () => {
+    current = sel.value; if (!current) { ed.set(''); ed.setLang('text'); return; }
+    ed.set('加载中...');
+    const r = await API.raw('/api/profiles/' + encodeURIComponent(current), { headers: { Authorization: 'Bearer ' + localStorage.getItem('nexa_token') } });
+    const text = await r.text();
+    const lang = detectLang(current) || sniffLang(text);
+    ed.setLang(lang);
+    ed.set(text);
+    ed.refresh();
+  });
+  card.appendChild(UI.field('选择文件', sel));
+  card.appendChild(ed.el);
+  const bar = UI.el('div', { class: 'row-gap mt-16' });
+  const saveBtn = UI.el('button', { class: 'btn btn-primary' }, '保存');
+  saveBtn.addEventListener('click', async () => {
+    if (!current) { UI.toast('请先选择文件', 'err'); return; }
+    await API.put('/api/profiles/' + encodeURIComponent(current), ed.get());
+    UI.toast('已保存', 'ok');
+  });
+  const applyBtn = UI.el('button', { class: 'btn btn-primary' }, '保存并应用');
+  applyBtn.addEventListener('click', async () => {
+    if (!current) return;
+    applyBtn.disabled = true; applyBtn.textContent = '应用中...';
+    try {
+      await API.put('/api/profiles/' + encodeURIComponent(current), ed.get());
+      await API.post('/api/config/apply', await API.get('/api/config'));
+      UI.toast('已保存并应用，正在刷新...', 'ok');
+      setTimeout(() => location.reload(), 600);
+    } catch (e) { UI.toast('保存失败：' + e.message, 'err'); }
+    applyBtn.disabled = false; applyBtn.textContent = '保存并应用';
+  });
+  bar.appendChild(saveBtn); bar.appendChild(applyBtn);
+  card.appendChild(bar);
+  c.appendChild(card);
+});
+
+// ── 页面：日志 (log.js) ─────────────
+route('#/log', async (c) => {
+  const cfg = await API.get('/api/config');
+  const local = JSON.parse(JSON.stringify(cfg.log));
+  c.innerHTML = '';
+
+  // 日志配置
+  const cfgCard = UI.el('div', { class: 'card' });
+  cfgCard.appendChild(UI.el('div', { class: 'card-title' }, '日志配置'));
+  cfgCard.appendChild(UI.el('div', { class: 'toggle-row' }, UI.el('span', { class: 'label-txt' }, '定时清理'),
+    UI.toggle(local.scheduled_clear, v => local.scheduled_clear = v)));
+  const cronI = UI.input('text', local.scheduled_clear_cron, '*/5 * * * *');
+  cronI.addEventListener('input', () => local.scheduled_clear_cron = cronI.value);
+  cfgCard.appendChild(UI.field('清理 Cron 表达式', cronI));
+  const limitI = UI.input('number', local.scheduled_clear_size_limit, '1');
+  limitI.addEventListener('input', () => local.scheduled_clear_size_limit = +limitI.value || 1);
+  const unitSel = UI.el('select', {});
+  ['KB', 'MB', 'GB'].forEach(u => unitSel.appendChild(UI.el('option', { value: u }, u)));
+  unitSel.value = local.scheduled_clear_size_limit_unit;
+  unitSel.addEventListener('change', () => local.scheduled_clear_size_limit_unit = unitSel.value);
+  cfgCard.appendChild(UI.el('div', { class: 'grid-2' },
+    UI.field('大小限制', limitI), UI.field('单位', unitSel)));
+  const saveLogBtn = UI.el('button', { class: 'btn btn-primary btn-sm' }, '保存配置');
+  saveLogBtn.addEventListener('click', async () => {
+    const full = await API.get('/api/config'); full.log = local;
+    await API.put('/api/config', full); UI.toast('已保存', 'ok');
+  });
+  cfgCard.appendChild(saveLogBtn);
+  c.appendChild(cfgCard);
+
+  // 面板日志
+  const appCard = UI.el('div', { class: 'card' });
+  appCard.appendChild(UI.el('div', { class: 'card-title' }, '面板日志',
+    UI.el('div', { class: 'row-gap' },
+      UI.el('button', { class: 'btn btn-outline btn-sm', onclick: () => {
+        const b = document.getElementById('app-log');
+        copyText(b.textContent);
+      } }, '复制'),
+      UI.el('button', { class: 'btn btn-danger btn-sm', onclick: async () => { await API.post('/api/logs/app/clear'); loadApp(); } }, '清空'),
+      UI.el('button', { class: 'btn btn-outline btn-sm', onclick: () => { const b = document.getElementById('app-log'); b.scrollTop = b.scrollHeight; } }, '滚到底部')
+    )));
+  const appBox = UI.el('div', { class: 'log-box', id: 'app-log' });
+  appCard.appendChild(appBox);
+  c.appendChild(appCard);
+
+  // 核心日志
+  const coreCard = UI.el('div', { class: 'card' });
+  coreCard.appendChild(UI.el('div', { class: 'card-title' }, '核心日志',
+    UI.el('div', { class: 'row-gap' },
+      UI.el('button', { class: 'btn btn-outline btn-sm', onclick: () => {
+        const b = document.getElementById('core-log');
+        copyText(b.textContent);
+      } }, '复制'),
+      UI.el('button', { class: 'btn btn-danger btn-sm', onclick: async () => { await API.post('/api/logs/core/clear'); loadCore(); } }, '清空'),
+      UI.el('button', { class: 'btn btn-outline btn-sm', onclick: () => { const b = document.getElementById('core-log'); b.scrollTop = b.scrollHeight; } }, '滚到底部')
+    )));
+  const coreBox = UI.el('div', { class: 'log-box', id: 'core-log' });
+  coreCard.appendChild(coreBox);
+  c.appendChild(coreCard);
+
+  async function loadApp() {
+    const log = await API.get('/api/logs/app');
+    appBox.textContent = typeof log === 'string' ? log : '';
+    appBox.scrollTop = appBox.scrollHeight;
+  }
+  await loadApp();
+
+  async function loadCore() {
+    const log = await API.get('/api/logs/core');
+    coreBox.textContent = typeof log === 'string' ? log : '';
+    coreBox.scrollTop = coreBox.scrollHeight;
+  }
+  await loadCore();
+
+  // 轮询日志
+  const pollApp = setInterval(loadApp, 3000);
+  const pollCore = setInterval(loadCore, 3000);
+
+  // 离开页面时清理
+  window.__logCleanup = () => { clearInterval(pollApp); clearInterval(pollCore); };
+});
+
+// ── 页面：设置 ─────────────────────
+route('#/settings', async (c) => {
+  c.innerHTML = '';
+  const card = UI.el('div', { class: 'card' });
+  card.appendChild(UI.el('div', { class: 'card-title' }, '用户设置'));
+  card.appendChild(UI.el('div', { class: 'card-desc' }, '修改登录账号的用户名和密码'));
+
+  // 回显真实的当前用户名，而不是写死显示 admin——
+  // 否则每次打开本页都会把用户名"重置"回 admin 的假象，看起来像改不了。
+  let currentUsername = 'admin';
+  try {
+    const me = await API.get('/api/auth/me');
+    if (me && me.username) currentUsername = me.username;
+  } catch (e) { /* 获取失败时退回默认展示，不阻塞页面渲染 */ }
+
+  const userI = UI.input('text', currentUsername, '用户名');
+  const passI = UI.input('password', '', '新密码');
+  const pass2I = UI.input('password', '', '确认新密码');
+  card.appendChild(UI.field('用户名', userI));
+  card.appendChild(UI.field('新密码', passI, '留空则不修改密码'));
+  card.appendChild(UI.field('确认新密码', pass2I));
+
+  const saveBtn = UI.el('button', { class: 'btn btn-primary' }, '保存');
+  saveBtn.addEventListener('click', async () => {
+    if (!userI.value) { UI.toast('用户名不能为空', 'err'); return; }
+    if (passI.value && passI.value !== pass2I.value) { UI.toast('两次密码不一致', 'err'); return; }
+    if (!passI.value) { UI.toast('请输入新密码', 'err'); return; }
+    saveBtn.disabled = true; saveBtn.textContent = '保存中...';
+    try {
+      await API.put('/api/auth/password', { username: userI.value, password: passI.value });
+      UI.toast('用户数据已保存，请重新登录', 'ok');
+      setTimeout(() => { localStorage.removeItem('nexa_token'); location.hash = '#/login'; }, 800);
+    } catch (e) { UI.toast('保存失败：' + e.message, 'err'); }
+    saveBtn.disabled = false; saveBtn.textContent = '保存';
+  });
+  card.appendChild(UI.el('div', { class: 'mt-20' }, saveBtn));
+  c.appendChild(card);
+
+  // ── 运行目录 ──
+  const runCard = UI.el('div', { class: 'card mt-20' });
+  runCard.appendChild(UI.el('div', { class: 'card-title' }, '运行目录'));
+  runCard.appendChild(UI.el('div', { class: 'card-desc' },
+    '核心运行时目录（存放生成的配置文件）。留空使用默认（数据目录/run）；非空必须为绝对路径，目录不存在会自动创建。保存并重启核心后生效。'));
+  let runCfg = null;
+  try { runCfg = await API.get('/api/config'); } catch (e) { /* 忽略，下方按钮会提示 */ }
+  const runDirI = UI.input('text', runCfg ? runCfg.config.run_dir : '', '留空使用默认，例：/root/nexa');
+  runCard.appendChild(UI.field('运行目录路径', runDirI));
+  const runSaveBtn = UI.el('button', { class: 'btn btn-primary' }, '保存');
+  runSaveBtn.addEventListener('click', async () => {
+    if (!runCfg) { UI.toast('配置读取失败，请刷新页面', 'err'); return; }
+    const v = runDirI.value.trim();
+    if (v && !v.startsWith('/')) { UI.toast('必须为绝对路径（以 / 开头）', 'err'); return; }
+    runSaveBtn.disabled = true; runSaveBtn.textContent = '保存中...';
+    try {
+      const full = await API.get('/api/config');
+      full.config.run_dir = v;
+      await API.put('/api/config', full);
+      runCfg.config.run_dir = v;
+      UI.toast('已保存，重启核心后生效', 'ok');
+    } catch (e) { UI.toast('保存失败：' + e.message, 'err'); }
+    runSaveBtn.disabled = false; runSaveBtn.textContent = '保存';
+  });
+  runCard.appendChild(UI.el('div', { class: 'mt-16' }, runSaveBtn));
+  c.appendChild(runCard);
+
+  // ── 无验证访问总开关 ──
+  const noAuthCard = UI.el('div', { class: 'card mt-20' });
+  noAuthCard.appendChild(UI.el('div', { class: 'card-title' }, '无验证访问'));
+  noAuthCard.appendChild(UI.el('div', { class: 'card-desc' },
+    '开启后，管理页面和 API 将不再需要登录即可访问。任何能连接到本设备管理端口的人都可以直接操作，请仅在你确认网络环境可信时开启。'));
+
+  let noAuthState = false;
+  try {
+    const r = await API.get('/api/auth/no-auth');
+    noAuthState = !!r.auth_disabled;
+  } catch (e) { /* 忽略，默认按关闭展示 */ }
+
+  const noAuthToggle = UI.toggle(noAuthState, async (v) => {
+    try {
+      await API.put('/api/auth/no-auth', { auth_disabled: v });
+      UI.toast(v ? '已开启无验证访问' : '已恢复登录验证', v ? 'err' : 'ok');
+      if (v) {
+        // 开启后当前会话也不再需要 token，无需强制跳转
+      }
+    } catch (e) {
+      UI.toast('操作失败：' + e.message, 'err');
+      const cb = noAuthToggle.querySelector('input[type=checkbox]');
+      if (cb) cb.checked = !v; // 回滚显示状态
+    }
+  });
+  noAuthCard.appendChild(UI.field('允许无验证访问', noAuthToggle, '默认关闭，建议仅临时开启'));
+  c.appendChild(noAuthCard);
+});
+
+// 每次路由前清理上一页的资源
+let lastHash = null;
+window.addEventListener('hashchange', () => {
+  if (window.__logCleanup && lastHash === '#/log') { window.__logCleanup(); window.__logCleanup = null; }
+  lastHash = location.hash;
+});
+
+router();
