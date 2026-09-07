@@ -93,7 +93,7 @@ jobs:
           CGO_ENABLED: '0'
           GOPROXY: https://goproxy.cn,direct
         run: |
-          go build -trimpath -ldflags='-s -w -X main.version=${GITHUB_REF_NAME:-dev}' -o nexa ./cmd/nexa
+          go build -trimpath -ldflags="-s -w -X main.version=${GITHUB_REF_NAME:-dev}" -o nexa ./cmd/nexa
           file nexa
       - name: package
         run: |
