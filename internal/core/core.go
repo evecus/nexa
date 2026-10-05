@@ -108,6 +108,9 @@ func (m *Manager) Start(cfg *config.Config) error {
 	if err := os.MkdirAll(paths.RunDir, 0755); err != nil {
 		return err
 	}
+	// 切换配置文件后后缀可能不同（如 config.json → config.yaml），
+	// 先清理 run 目录里旧的 config / config.* 残留，只保留本次要写入的文件。
+	m.cleanRunProfiles(runProfile)
 	if err := copyFile(profileSrc, runProfile); err != nil {
 		return err
 	}
@@ -357,6 +360,28 @@ func (m *Manager) killStaleCore() {
 	}
 	_ = os.Remove(paths.PidFilePath)
 	m.log.App("核心", "已清理残留核心进程。")
+}
+
+// cleanRunProfiles 启动核心前调用：删除 run 目录下除 keep 以外的 config / config.*，
+// 保证目录里只有本次要用的这一个配置文件；不动核心自己生成的其它文件。
+func (m *Manager) cleanRunProfiles(keep string) {
+	entries, err := os.ReadDir(paths.RunDir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || (name != "config" && !strings.HasPrefix(name, "config.")) {
+			continue
+		}
+		full := filepath.Join(paths.RunDir, name)
+		if full == keep {
+			continue
+		}
+		if err := os.Remove(full); err == nil {
+			m.log.App("配置文件", "已清理 run 目录残留文件："+full)
+		}
+	}
 }
 
 func copyFile(src, dst string) error {
