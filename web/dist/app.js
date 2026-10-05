@@ -414,6 +414,9 @@ route('#/app', async (c) => {
   argsSel.value = local.config.run_args || '';
   argsSel.addEventListener('change', () => local.config.run_args = argsSel.value);
   basic.appendChild(UI.field('启动参数', argsSel, '候选项在「代理配置 → 基本设置」中维护'));
+  const runDirI = UI.input('text', local.config.run_dir || '', '留空使用默认，例：/root/nexa');
+  runDirI.addEventListener('input', () => local.config.run_dir = runDirI.value.trim());
+  basic.appendChild(UI.field('运行目录', runDirI, '核心运行时目录（存放生成的配置文件）。留空使用默认（数据目录/run）；非空必须为绝对路径，目录不存在会自动创建。保存并应用后生效。'));
   const delayI = UI.input('number', local.config.start_delay, '0');
   delayI.addEventListener('input', () => local.config.start_delay = +delayI.value || 0);
   basic.appendChild(UI.field('延迟启动（秒）', delayI));
@@ -428,6 +431,7 @@ route('#/app', async (c) => {
   const actions = UI.el('div', { class: 'right-actions' });
   const saveOnlyBtn = UI.el('button', { class: 'btn btn-outline' }, '保存');
   saveOnlyBtn.addEventListener('click', async () => {
+    if (local.config.run_dir && !local.config.run_dir.startsWith('/')) { UI.toast('运行目录必须为绝对路径（以 / 开头）', 'err'); return; }
     saveOnlyBtn.disabled = true; saveOnlyBtn.textContent = '保存中...';
     try {
       await API.put('/api/config', local);
@@ -437,6 +441,7 @@ route('#/app', async (c) => {
   });
   const saveBtn = UI.el('button', { class: 'btn btn-primary' }, '保存并应用');
   saveBtn.addEventListener('click', async () => {
+    if (local.config.run_dir && !local.config.run_dir.startsWith('/')) { UI.toast('运行目录必须为绝对路径（以 / 开头）', 'err'); return; }
     saveBtn.disabled = true; saveBtn.textContent = '应用中...';
     try {
       await API.post('/api/config/apply', local);
@@ -905,33 +910,6 @@ route('#/settings', async (c) => {
   });
   card.appendChild(UI.el('div', { class: 'mt-20' }, saveBtn));
   c.appendChild(card);
-
-  // ── 运行目录 ──
-  const runCard = UI.el('div', { class: 'card mt-20' });
-  runCard.appendChild(UI.el('div', { class: 'card-title' }, '运行目录'));
-  runCard.appendChild(UI.el('div', { class: 'card-desc' },
-    '核心运行时目录（存放生成的配置文件）。留空使用默认（数据目录/run）；非空必须为绝对路径，目录不存在会自动创建。保存并重启核心后生效。'));
-  let runCfg = null;
-  try { runCfg = await API.get('/api/config'); } catch (e) { /* 忽略，下方按钮会提示 */ }
-  const runDirI = UI.input('text', runCfg ? runCfg.config.run_dir : '', '留空使用默认，例：/root/nexa');
-  runCard.appendChild(UI.field('运行目录路径', runDirI));
-  const runSaveBtn = UI.el('button', { class: 'btn btn-primary' }, '保存');
-  runSaveBtn.addEventListener('click', async () => {
-    if (!runCfg) { UI.toast('配置读取失败，请刷新页面', 'err'); return; }
-    const v = runDirI.value.trim();
-    if (v && !v.startsWith('/')) { UI.toast('必须为绝对路径（以 / 开头）', 'err'); return; }
-    runSaveBtn.disabled = true; runSaveBtn.textContent = '保存中...';
-    try {
-      const full = await API.get('/api/config');
-      full.config.run_dir = v;
-      await API.put('/api/config', full);
-      runCfg.config.run_dir = v;
-      UI.toast('已保存，重启核心后生效', 'ok');
-    } catch (e) { UI.toast('保存失败：' + e.message, 'err'); }
-    runSaveBtn.disabled = false; runSaveBtn.textContent = '保存';
-  });
-  runCard.appendChild(UI.el('div', { class: 'mt-16' }, runSaveBtn));
-  c.appendChild(runCard);
 
   // ── 无验证访问总开关 ──
   const noAuthCard = UI.el('div', { class: 'card mt-20' });
