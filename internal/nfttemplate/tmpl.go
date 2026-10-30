@@ -435,11 +435,5 @@ var tmplText = "{{- /* nft 模板，规则文本 1:1 对齐原 hijack.ut。 */ -
 	"\t\tiifname @lan_inbound_device meta l4proto vmap { tcp: {{ if eq .TcpMode \"tproxy\" }} jump lan_tproxy {{ else if eq .TcpMode \"tun\" }} jump lan_tun {{ else }} continue {{ end }}, udp: {{ if eq .UdpMode \"tproxy\" }} jump lan_tproxy {{ else if eq .UdpMode \"tun\" }} jump lan_tun {{ else }} continue {{ end }} }\n" +
 	"\t}\n" +
 	"\t{{ end }}\n" +
-	"}\n" +
-	"\n" +
-	"{{ if .BypassChinaMainlandIP -}}\n" +
-	"include \"/etc/nexa/firewall/geoip_cn.nft\"\n" +
-	"{{ end }}\n" +
-	"{{ if .BypassChinaMainlandIP6 -}}\n" +
-	"include \"/etc/nexa/firewall/geoip6_cn.nft\"\n" +
-	"{{ end }}\n"
+	"}\n"
+

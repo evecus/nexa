@@ -399,6 +399,20 @@ func extractGeoIPElements(path string) (string, error) {
 	if m == nil {
 		return "", fmt.Errorf("geoip 文件 %s 未找到 elements 块", path)
 	}
-	// 去掉首尾空白和多余换行，保留逗号分隔的地址列表
-	return strings.TrimSpace(string(m[1])), nil
+	// 逐行 trim 并丢弃空行后重新拼接：
+	// 1) 捕获内容以换行开头，直接拼进模板会在 elements 块内产生空行，
+	//    nft 解析会报 "syntax error, unexpected newline"；
+	// 2) ipset 回退路径（splitCIDRList）对单行逗号分隔格式同样兼容。
+	var entries []string
+	for _, line := range strings.Split(string(m[1]), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		entries = append(entries, line)
+	}
+	if len(entries) == 0 {
+		return "", fmt.Errorf("geoip 文件 %s elements 块为空", path)
+	}
+	return strings.Join(entries, ", "), nil
 }
