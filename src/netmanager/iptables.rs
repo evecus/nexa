@@ -666,20 +666,9 @@ fn hex_to_decimal(hex_id: &str) -> String {
     }
 }
 
-/// 查找 nexa 组的 GID，找不到返回空字符串（对齐 nfttemplate.lookup_core_gid）。
+/// 返回核心进程防回环用的固定数字 GID（对齐 nfttemplate.lookup_core_gid / Go 版 lookupNexaGID）。
 pub fn lookup_nexa_gid() -> String {
-    match Command::new("getent").args(["group", "nexa"]).output() {
-        Ok(o) => {
-            let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
-            let fields: Vec<&str> = s.split(':').collect();
-            if fields.len() >= 3 {
-                fields[2].to_string()
-            } else {
-                String::new()
-            }
-        }
-        Err(_) => String::new(),
-    }
+    crate::config::CORE_BYPASS_GID.to_string()
 }
 
 // ── 规则构建 helper ────────────────────────────────────

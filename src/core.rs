@@ -6,7 +6,6 @@ use crate::logger::Logger;
 use crate::paths;
 use crate::store::Store;
 use parking_lot::Mutex;
-use std::collections::HashSet;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -147,8 +146,9 @@ impl CoreManager {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
-        // GID 绕过：核心以 root 运行，主 GID 设为 nexa 组，nft/iptables 用 skgid/--gid-owner 匹配绕过。
-        // meta skgid 匹配的是主 GID，不是附加组，所以必须把 nexa 组设为主 GID，
+        // GID 绕过：核心以 root 运行，主 GID 设为固定数字 config.CORE_BYPASS_GID，
+        // nft/iptables 用 skgid/--gid-owner 匹配绕过（对齐 Go 版，无需创建系统组）。
+        // meta skgid 匹配的是主 GID，不是附加组，所以必须把 CORE_BYPASS_GID 设为主 GID，
         // 同时把 root 组（GID 0）加到附加组里，保持 root 权限正常。
         //
         // 系统不支持 cgroup 防回环时，GID 绕过是唯一可靠、程序完全可控的手段，
@@ -161,20 +161,18 @@ impl CoreManager {
             self.log
                 .app("核心", "当前系统不支持 cgroup 防回环，已自动改用 GID 绕过。");
         }
-        let mut core_gid: Option<u32> = None;
-        if effective_bypass_gid {
-            match ensure_nexa_group() {
-                Ok(gid) => {
-                    core_gid = Some(gid);
-                    self.log
-                        .app("核心", &format!("已将 nexa 组（GID {}）设为核心进程主 GID。", gid));
-                }
-                Err(e) => self.log.app(
-                    "核心",
-                    &format!("警告：创建 nexa 组失败：{}，GID 绕过可能失效。", e),
+        let core_gid: Option<u32> = if effective_bypass_gid {
+            self.log.app(
+                "核心",
+                &format!(
+                    "已将核心进程主 GID 设为 {}（防回环，无需系统组）。",
+                    crate::config::CORE_BYPASS_GID
                 ),
-            }
-        }
+            );
+            Some(crate::config::CORE_BYPASS_GID)
+        } else {
+            None
+        };
         // 非 unix 平台上 core_gid 不会被读取（无 pre_exec 可用），显式消费避免告警
         #[cfg(not(unix))]
         let _ = core_gid;
@@ -496,7 +494,7 @@ fn which_exists(name: &str) -> bool {
     if name.contains('/') {
         return Path::new(name).is_file();
     }
-    command_exists(name)
+    std::env::split_paths(&std::env::var("PATH").unwrap_or_default()).any(|d| d.join(name).exists())
 }
 
 // ── 信号封装（unix / 非 unix） ─────────────────────────
@@ -565,73 +563,4 @@ fn send_hup(pid: u32) -> anyhow::Result<()> {
 #[cfg(not(unix))]
 fn send_hup(_pid: u32) -> anyhow::Result<()> {
     anyhow::bail!("当前平台不支持 SIGHUP 重载")
-}
-
-// ── nexa 系统组（GID 绕过） ────────────────────────────
-
-/// 确保 nexa 系统组存在，返回其 GID。
-/// 尝试顺序：groupadd → addgroup → 直接写 /etc/group（兼容无命令的 OpenWrt）。
-pub fn ensure_nexa_group() -> anyhow::Result<u32> {
-    if let Some(gid) = lookup_nexa_gid() {
-        return Ok(gid);
-    }
-    if command_exists("groupadd") {
-        let _ = Command::new("groupadd").args(["-r", "nexa"]).status();
-        if let Some(gid) = lookup_nexa_gid() {
-            return Ok(gid);
-        }
-    }
-    if command_exists("addgroup") {
-        let _ = Command::new("addgroup").args(["-S", "nexa"]).status();
-        if let Some(gid) = lookup_nexa_gid() {
-            return Ok(gid);
-        }
-    }
-    // 回退：直接写 /etc/group（兼容无 groupadd/addgroup 的 OpenWrt）
-    append_group_to_file("nexa")
-}
-
-/// 查找 nexa 组的 GID，找不到返回 None。
-pub fn lookup_nexa_gid() -> Option<u32> {
-    let data = std::fs::read_to_string("/etc/group").ok()?;
-    for line in data.lines() {
-        let fields: Vec<&str> = line.split(':').collect();
-        if fields.len() >= 3 && fields[0] == "nexa" {
-            return fields[2].parse::<u32>().ok();
-        }
-    }
-    None
-}
-
-/// 直接向 /etc/group 追加 nexa 组条目（/etc/group 格式：组名:密码:GID:用户列表）。
-/// 选一个不冲突的 GID（从 65534 往下找）。
-fn append_group_to_file(name: &str) -> anyhow::Result<u32> {
-    let data = std::fs::read_to_string("/etc/group")?;
-    let mut used = HashSet::new();
-    for line in data.lines() {
-        let fields: Vec<&str> = line.split(':').collect();
-        if fields.len() >= 3 {
-            if let Ok(gid) = fields[2].parse::<u32>() {
-                used.insert(gid);
-            }
-        }
-    }
-    let mut gid = 0u32;
-    for i in (100..=65534).rev() {
-        if !used.contains(&i) {
-            gid = i;
-            break;
-        }
-    }
-    if gid == 0 {
-        anyhow::bail!("找不到可用的 GID");
-    }
-    use std::io::Write;
-    let mut f = std::fs::OpenOptions::new().append(true).open("/etc/group")?;
-    writeln!(f, "{}:x:{}:", name, gid)?;
-    Ok(gid)
-}
-
-fn command_exists(name: &str) -> bool {
-    std::env::split_paths(&std::env::var("PATH").unwrap_or_default()).any(|d| d.join(name).exists())
 }

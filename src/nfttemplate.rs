@@ -56,9 +56,6 @@ pub struct Model {
     pub tun_fw_mask: String,
     pub tun_fw_umask: String,
 
-    pub bypass_china_mainland_ip: bool,
-    pub bypass_china_mainland_ip6: bool,
-
     /// bypass 开启时从 geoip 文件提取的 elements 列表，注入 china_ip / china_ip6 集合。
     pub china_ip_elements: String,
     pub china_ip6_elements: String,
@@ -165,8 +162,6 @@ pub fn build(cfg: &Config, lan_inbound_device: &[String], cgroups_version: i32) 
         tun_fw_mark: cfg.routing.tun_fw_mark.clone(),
         tun_fw_mask: cfg.routing.tun_fw_mask.clone(),
         tun_fw_umask: umask(&cfg.routing.tun_fw_mask),
-        bypass_china_mainland_ip: p.bypass_china_mainland_ip,
-        bypass_china_mainland_ip6: p.bypass_china_mainland_ip6,
         dns_hijack_nfproto_has4: p.ipv4_dns_hijack,
         dns_hijack_nfproto_has6: p.ipv6_dns_hijack,
         proxy_nfproto_has4: p.ipv4_proxy,
@@ -176,21 +171,10 @@ pub fn build(cfg: &Config, lan_inbound_device: &[String], cgroups_version: i32) 
     }
 }
 
-/// 查找 nexa 组的 GID，找不到返回空字符串。
+/// 返回核心进程防回环用的固定数字 GID（对齐 Go 版 lookupCoreGID）。
+/// 不再查找/创建系统组：内核 skgid 匹配只需要数字。
 pub fn lookup_core_gid() -> String {
-    let data = match std::fs::read_to_string("/etc/group") {
-        Ok(s) => s,
-        Err(_) => return String::new(),
-    };
-    for line in data.lines() {
-        let mut parts = line.split(':');
-        if parts.next().unwrap_or("") == "nexa" {
-            if let Some(gid) = parts.nth(1) {
-                return gid.to_string();
-            }
-        }
-    }
-    String::new()
+    crate::config::CORE_BYPASS_GID.to_string()
 }
 
 fn build_router_views(cfg: &Config) -> Vec<AccessControlView> {
@@ -881,18 +865,7 @@ pub fn render(m: &Model) -> String {
         o.push_str("\t}\n\n");
     }
 
-    o.push_str("}\n\n");
-
-    // bypass 大陆 IP：引用 geoip 文件（原 geoip 文件 table 名为 momo，与 nexa table 独立）
-    if m.bypass_china_mainland_ip {
-        o.push_str(&format!("include \"{}\"\n", crate::paths::geoip_cn_nft().display()));
-    }
-    if m.bypass_china_mainland_ip6 {
-        o.push_str(&format!(
-            "include \"{}\"\n",
-            crate::paths::geoip6_cn_nft().display()
-        ));
-    }
+    o.push_str("}\n");
     o
 }
 
@@ -1032,8 +1005,6 @@ mod tests {
 
     /// 构造一份与平台探测无关的确定性配置，保证断言在任何系统上结果一致。
     fn test_cfg(tcp: &str, udp: &str) -> Config {
-        // 渲染会引用 geoip 文件路径，需先初始化 paths（幂等）
-        crate::paths::init_once_for_test();
         let mut cfg = Config::default();
         cfg.proxy.router_proxy = true;
         cfg.proxy.lan_proxy = true;
@@ -1138,15 +1109,34 @@ mod tests {
     }
 
     #[test]
-    fn geoip_include_only_when_enabled() {
+    fn china_elements_only_when_enabled() {
         let mut cfg = test_cfg("tproxy", "tproxy");
-        let m = build(&cfg, &[], 2);
-        assert!(!render(&m).contains("include \""));
-
-        cfg.proxy.bypass_china_mainland_ip = true;
+        // 未开启 bypass：china_ip / china_ip6 集合存在但为空，不引用任何 include
         let m = build(&cfg, &[], 2);
         let s = render(&m);
-        assert!(s.contains("include \""));
-        assert!(s.contains("geoip_cn.nft"));
+        assert!(s.contains("set china_ip {"));
+        assert!(s.contains("set china_ip6 {"));
+        assert!(!s.contains("include \""));
+        assert!(!s.contains("elements = {\n\t\t\t1.0.1.0/24"));
+
+        // 开启 bypass 后由 netmanager 注入 elements（对齐 Go：不使用 include）
+        cfg.proxy.bypass_china_mainland_ip = true;
+        cfg.proxy.bypass_china_mainland_ip6 = true;
+        let mut m = build(&cfg, &[], 2);
+        m.china_ip_elements = "1.0.1.0/24, 1.0.2.0/23".into();
+        m.china_ip6_elements = "2001:250::/30".into();
+        let s = render(&m);
+        assert!(!s.contains("include \""));
+        assert!(s.contains("elements = {\n\t\t\t1.0.1.0/24, 1.0.2.0/23\n\t\t}"));
+        assert!(s.contains("elements = {\n\t\t\t2001:250::/30\n\t\t}"));
+    }
+
+    #[test]
+    fn table_name_is_nexa() {
+        // nft 表名固定为 inet nexa（对齐 Go 版），不得出现 momo 等旧表名
+        let m = build(&test_cfg("tproxy", "tproxy"), &[], 2);
+        let s = render(&m);
+        assert!(s.starts_with("table inet nexa {"));
+        assert!(!s.contains("momo"));
     }
 }

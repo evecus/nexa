@@ -45,12 +45,9 @@ pub fn nft_dir() -> PathBuf {
     home().join("firewall")
 }
 
-pub fn config_path() -> PathBuf {
-    home().join("config.json")
-}
-
-pub fn auth_path() -> PathBuf {
-    home().join("auth.json")
+/// 数据库文件（redb，对齐 Go 版 paths.DBPath = <数据目录>/nexa.db）。
+pub fn db_path() -> PathBuf {
+    home().join("nexa.db")
 }
 
 pub fn geoip_cn_nft() -> PathBuf {
@@ -147,12 +144,4 @@ pub fn get() -> serde_json::Value {
         "bridge_nf_call_iptables_flag_path": bridge_nf_call_iptables_flag(),
         "bridge_nf_call_ip6tables_flag_path": bridge_nf_call_ip6tables_flag(),
     })
-}
-
-/// 测试用途：以默认数据目录初始化（幂等，已初始化则忽略）。
-#[cfg(test)]
-pub fn init_once_for_test() {
-    if HOME_DIR.get().is_none() {
-        init(None);
-    }
 }

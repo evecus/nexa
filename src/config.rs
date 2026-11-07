@@ -420,6 +420,10 @@ fn default_router_access_controls() -> Vec<RouterAccessControl> {
     ]
 }
 
+/// 核心进程防回环用的固定主 GID（对齐 Go 版 config.CoreBypassGID）。
+/// nft meta skgid / iptables --gid-owner 匹配只需要数字，无需创建系统组。
+pub const CORE_BYPASS_GID: u32 = 9990;
+
 /// 仅当系统实际支持 cgroup（v1 net_cls 或 v2 且挂载点可写）时才默认开启，
 /// 与 default_bypass_gid 互补：cgroup 不支持的系统上，防回环完全依赖 GID 绕过。
 fn default_bypass_cgroup() -> bool {
@@ -427,7 +431,7 @@ fn default_bypass_cgroup() -> bool {
 }
 
 /// GID 绕过是程序唯一可完全控制、且所有 Linux 系统都支持的防回环方式
-/// （核心进程主 GID 由 nexa 自己创建的系统组决定，不依赖内核 cgroup 特性）。
+/// （核心进程主 GID 固定为 CORE_BYPASS_GID，不依赖 /etc/group 或内核 cgroup 特性）。
 /// 系统不支持 cgroup 时必须默认打开；支持时默认关闭，避免叠加两套冗余规则。
 fn default_bypass_gid() -> bool {
     !cgroupsupport::supported()

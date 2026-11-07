@@ -1,6 +1,6 @@
 #!/usr/sbin/nft -f
 
-table inet momo {
+table inet nexa {
 	set china_ip6 {
 		type ipv6_addr
 		flags interval

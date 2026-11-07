@@ -122,13 +122,7 @@ async fn run_on(
     // 先清理旧规则，避免残留导致重复插入（对齐 Apply 前的 cleanup 惯例）。
     net.cleanup(&cfg);
 
-    // 确保 nexa 系统组存在：GID 绕过规则（nft meta skgid / iptables --gid-owner）
-    // 需要查到 nexa 组的 GID 才会下发。常驻模式由 core.start 创建该组，
-    // on 单独使用时不经过 core，故这里显式建一次（幂等）。
-    if let Err(e) = crate::core::ensure_nexa_group() {
-        log.app("CLI", &format!("警告：创建 nexa 组失败（{}），GID 绕过规则将不下发。", e));
-    }
-
+    // GID 绕过使用固定数字 CORE_BYPASS_GID（对齐 Go 版），无需创建系统组。
     net.apply(&cfg)?;
     log.app("CLI", "已根据磁盘配置完成防火墙规则和策略路由配置（未启动代理核心）。");
     Ok(())

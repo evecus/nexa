@@ -100,8 +100,8 @@ impl NetManager {
         }
 
         let mut model = nfttemplate::build(cfg, &lan_devs, cgroups_version());
-        // bypass 大陆 IP 时，从 geoip 文件提取 elements 注入 nexa table 集合。
-        // 原 geoip 文件 table 名为 momo，与 nexa table 不匹配，此处直接注入 elements 修正。
+        // bypass 大陆 IP 时，从 geoip 文件提取 elements 注入 nexa 表集合
+        // （geoip 文件的表名也已统一为 nexa，但从不直接 include，只取其 elements）。
         if p.bypass_china_mainland_ip {
             match extract_geoip_elements(&paths::geoip_cn_nft().to_string_lossy()) {
                 Ok(els) => model.china_ip_elements = els,
@@ -161,11 +161,24 @@ impl NetManager {
         }
         // 检测可用的防火墙表：优先 fw4（OpenWrt），回退 filter（普通 Linux）
         let mut fw_table = "fw4";
-        if Command::new("nft").args(["list", "table", "inet", "fw4"]).output().map(|o| !o.status.success()).unwrap_or(true) {
-            if Command::new("nft").args(["list", "table", "inet", "filter"]).output().map(|o| o.status.success()).unwrap_or(false) {
+        let fw4_out = Command::new("nft").args(["list", "table", "inet", "fw4"]).output();
+        if !fw4_out.as_ref().map(|o| o.status.success()).unwrap_or(false) {
+            let filter_out = Command::new("nft").args(["list", "table", "inet", "filter"]).output();
+            if filter_out.as_ref().map(|o| o.status.success()).unwrap_or(false) {
                 fw_table = "filter";
             } else {
-                self.log.app("代理", "未检测到防火墙表(fw4/filter)，跳过 TUN 防火墙放行。");
+                let fmt_err = |o: &std::io::Result<std::process::Output>| match o {
+                    Ok(o) => String::from_utf8_lossy(&o.stderr).trim().to_string(),
+                    Err(e) => e.to_string(),
+                };
+                self.log.app(
+                    "代理",
+                    &format!(
+                        "未检测到防火墙表(fw4/filter)，跳过 TUN 防火墙放行。fw4: {}, filter: {}",
+                        fmt_err(&fw4_out),
+                        fmt_err(&filter_out)
+                    ),
+                );
                 return;
             }
         }
@@ -353,9 +366,11 @@ fn extract_handles_for_comment(table: &str, chain: &str, comment: &str) -> Vec<u
 }
 
 /// 从 geoip_cn.nft / geoip6_cn.nft 中提取 `elements = { ... }` 块的内容。
+/// 对齐 Go 版 extractGeoIPElements：逐行 trim、丢弃空行后以 ", " 重新拼接 ——
+/// 捕获内容以换行开头，直接拼进模板会在 elements 块内产生空行，
+/// nft 解析会报 "syntax error, unexpected newline"。
 pub fn extract_geoip_elements(path: &str) -> anyhow::Result<String> {
     let data = std::fs::read_to_string(path)?;
-    let bytes = data.as_bytes();
     // 定位 "elements" 后的第一个 '{'，取到配对的 '}'
     let key = "elements";
     let mut idx = 0usize;
@@ -376,10 +391,17 @@ pub fn extract_geoip_elements(path: &str) -> anyhow::Result<String> {
         let after_brace = after_eq + (data[after_eq..].len() - rest2.len()) + 1;
         if let Some(end) = data[after_brace..].find('}') {
             let inner = &data[after_brace..after_brace + end];
-            return Ok(inner.trim().to_string());
+            let entries: Vec<&str> = inner
+                .lines()
+                .map(|l| l.trim())
+                .filter(|l| !l.is_empty())
+                .collect();
+            if entries.is_empty() {
+                anyhow::bail!("geoip 文件 {} elements 块为空", path);
+            }
+            return Ok(entries.join(", "));
         }
         anyhow::bail!("geoip 文件 {} 的 elements 块未闭合", path);
     }
-    let _ = bytes;
     anyhow::bail!("geoip 文件 {} 未找到 elements 块", path)
 }

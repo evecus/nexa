@@ -1,29 +1,18 @@
 //! 用户名/密码 + JWT token 认证，对齐 Go 版 internal/auth。
-//! 凭据与「无验证访问」开关持久化在 <数据目录>/auth.json。
+//! 凭据与「无验证访问」开关持久化在数据库 auth 表（对齐 Go bbolt bucketAuth）。
 
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
-use std::fs;
 use std::sync::Arc;
 
-use crate::paths;
-use crate::store::Store;
+use crate::store::{Credentials, Store};
 
 const JWT_SECRET: &[u8] = b"nexa-default-secret-change-me";
 /// token 有效期 24 小时（对齐 Go 版 tokenTTL）。
 const TOKEN_TTL_SECS: usize = 24 * 3600;
 const DEFAULT_USER: &str = "admin";
 const DEFAULT_PASS: &str = "admin";
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct AuthFile {
-    username: String,
-    #[serde(alias = "hash")]
-    password_hash: String,
-    #[serde(default, alias = "no_auth")]
-    auth_disabled: bool,
-}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {
@@ -32,23 +21,20 @@ pub struct Claims {
 }
 
 pub struct AuthState {
-    #[allow(dead_code)]
     store: Arc<Store>,
-    inner: RwLock<AuthFile>,
+    inner: RwLock<Credentials>,
 }
 
 impl AuthState {
     pub fn new(store: Arc<Store>) -> anyhow::Result<Self> {
-        let path = paths::auth_path();
-        let auth = if path.exists() {
-            let data = fs::read_to_string(&path)?;
-            serde_json::from_str(&data).unwrap_or_else(|_| default_auth())
-        } else {
-            let a = default_auth();
-            if let Ok(json) = serde_json::to_string_pretty(&a) {
-                let _ = fs::write(&path, json);
+        // 数据库无凭据时写入默认 admin/admin（对齐 Go 版首次初始化）
+        let auth = match store.load_auth()? {
+            Some(c) => c,
+            None => {
+                let c = default_auth()?;
+                store.save_auth(&c)?;
+                c
             }
-            a
         };
         Ok(Self {
             store,
@@ -57,10 +43,8 @@ impl AuthState {
     }
 
     fn persist(&self) -> anyhow::Result<()> {
-        let a = self.inner.read().clone();
-        let json = serde_json::to_string_pretty(&a)?;
-        fs::write(paths::auth_path(), json)?;
-        Ok(())
+        let c = self.inner.read().clone();
+        self.store.save_auth(&c)
     }
 
     pub fn login(&self, username: &str, password: &str) -> anyhow::Result<String> {
@@ -69,7 +53,7 @@ impl AuthState {
             if a.username != username {
                 anyhow::bail!("invalid credentials");
             }
-            if !bcrypt::verify(password, &a.password_hash)? {
+            if !bcrypt::verify(password, &a.hash)? {
                 anyhow::bail!("invalid credentials");
             }
         }
@@ -121,19 +105,19 @@ impl AuthState {
         {
             let mut a = self.inner.write();
             a.username = user.to_string();
-            a.password_hash = hash;
+            a.hash = hash;
         }
         self.persist()
     }
 }
 
-fn default_auth() -> AuthFile {
-    let hash = bcrypt::hash(DEFAULT_PASS, bcrypt::DEFAULT_COST).unwrap_or_default();
-    AuthFile {
+fn default_auth() -> anyhow::Result<Credentials> {
+    let hash = bcrypt::hash(DEFAULT_PASS, bcrypt::DEFAULT_COST)?;
+    Ok(Credentials {
         username: DEFAULT_USER.to_string(),
-        password_hash: hash,
+        hash,
         auth_disabled: false,
-    }
+    })
 }
 
 fn now_secs() -> usize {
