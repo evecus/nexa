@@ -1,0 +1,33 @@
+[package]
+name = "nexa"
+version = "0.1.0"
+edition = "2021"
+description = "Nexa - Transparent proxy management panel (Rust rewrite)"
+license = "MIT"
+
+[dependencies]
+axum = { version = "0.7.4", features = ["multipart"] }
+tokio = { version = "1.36", features = ["full"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+futures-core = "0.3"
+tower = "0.4.13"
+tower-http = { version = "0.5.1", features = ["cors"] }
+serde = { version = "1.0.196", features = ["derive"] }
+serde_json = "1.0.113"
+jsonwebtoken = "=8.3.0"
+bcrypt = "0.15.0"
+tracing = "0.1.40"
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+clap = { version = "4.4.18", features = ["derive"] }
+anyhow = "1.0.79"
+once_cell = "1.19.0"
+parking_lot = "0.12.1"
+# 单文件嵌入式 KV 数据库（纯 Rust，无 C 依赖），对标 Go 版 bbolt 的角色
+redb = "2"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[profile.release]
+strip = "symbols"
+debug = false
